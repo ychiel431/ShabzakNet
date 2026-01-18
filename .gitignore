@@ -1,0 +1,6 @@
+venv/
+node_modules/
+__pycache__/
+.env
+server/static/qrcodes/*.png
+server/static/photos/*
