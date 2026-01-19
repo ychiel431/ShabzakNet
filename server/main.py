@@ -1,21 +1,20 @@
 import os
 import qrcode
 import codecs
-import socket
 import csv
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import MongoClient
 from pydantic import BaseModel
 from typing import Optional
 from fastapi.responses import HTMLResponse
 
-# --- איתחול המערכת ---
+# ייבוא התשתית מהקובץ החדש - מוודא סנכרון מלא עם ה-IP וה-DB
+from database import db, db_sync, SERVER_IP, CURRENT_BASE_URL, STATIC_DIR, QR_DIR, PHOTO_DIR
+
 app = FastAPI()
 
-# הגדרות CORS
+# הגדרות CORS - מאפשר ל-Frontend לתקשר עם השרת
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,54 +23,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-
-def get_local_ip():
-    """פונקציה שמזהה אוטומטית את כתובת ה-IP של המחשב ברשת המקומית"""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        # לא באמת מתבצעת התקשרות, זה רק כדי לזהות את ה-Interface הפעיל
-        s.connect(('8.8.8.8', 80))
-        ip = s.getsockname()[0]
-    except Exception:
-        ip = '127.0.0.1'
-    finally:
-        s.close()
-    return ip
-
-# --- הגדרות כתובת דינמיות ---
-#SERVER_IP = get_local_ip()
-SERVER_IP = "10.154.103.124"
-PORT = 8080
-CURRENT_BASE_URL = f"http://{SERVER_IP}:{PORT}" #
-
-print(f"--- המערכת עלתה בכתובת: {CURRENT_BASE_URL} ---")
-
-
-
-# הגדרות תיקיות וקבצים סטטיים
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-QR_DIR = os.path.join(STATIC_DIR, "qrcodes")
-PHOTO_DIR = os.path.join(STATIC_DIR, "photos")
-# יצירת התיקיות בצורה כוחנית אם הן חסרות
-os.makedirs(QR_DIR, exist_ok=True)
-print(f">>> QR folder is at: {QR_DIR}") # זה ידפיס לך איפה התיקייה באמת נמצאת
-
-for d in [QR_DIR, PHOTO_DIR]:
-    os.makedirs(d, exist_ok=True)
-
+# הגשת קבצים סטטיים (תמונות ו-QR)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-# --- חיבור למסד הנתונים ---
-MONGO_URI = "mongodb://127.0.0.1:27017"
-client_async = AsyncIOMotorClient(MONGO_URI)
-db = client_async.shabzak_db # אסינכרוני לפעולות כתיבה
-
-client_sync = MongoClient(MONGO_URI)
-db_sync = client_sync.shabzak_db # סינכרוני לשאילתות מורכבות ב-Dashboard
-soldiers_collection = db_sync.soldiers 
-vehicles_collection = db_sync.vehicles
 
 # --- מודלים ---
 class PreAssignedSoldier(BaseModel):
@@ -87,14 +40,14 @@ class PreAssignedSoldier(BaseModel):
 @app.get("/vehicles/list")
 def get_vehicles_with_soldiers():
     try:
-        # שליפת רכבים מהקולקשן שנוצר ע"י sync_vehicles.py
+        # שליפת נתונים דרך החיבור הסינכרוני המרוכז ב-database.py
         vehicles_cursor = list(db_sync.vehicles.find({}, {"_id": 0}))
         all_soldiers = list(db_sync.soldiers.find({}, {"_id": 0}))
         
         vehicles_with_crew = []
         for vehicle in vehicles_cursor:
             v_data = vehicle.copy()
-            # סינון חיילים לפי הרכב
+            # סינון חיילים לפי הרכב המשובץ
             crew = [s for s in all_soldiers if str(s.get("assigned_vehicle_id")).strip() == vehicle["id"]]
             v_data["crew"] = crew
             v_data["current_occupancy"] = len(crew)
@@ -121,6 +74,7 @@ async def upload_soldiers_csv(file: UploadFile = File(...)):
                 "mission_role": clean_row.get("mission_role", "לוחם"),
                 "photo_url": "" 
             }
+            # עדכון ב-DB האסינכרוני
             await db.soldiers.update_one(
                 {"military_id": soldier["military_id"]},
                 {"$set": soldier},
@@ -140,32 +94,28 @@ async def upload_photo(military_id: str, file: UploadFile = File(...)):
     await db.soldiers.update_one({"military_id": military_id}, {"$set": {"photo_url": photo_url}})
     return {"status": "success", "photo_url": photo_url}
 
-# --- 3. מערכת הקיוסק (זיהוי חייל) ---
+# --- 3. מערכת הקיוסק (זיהוי חייל והפקת QR) ---
 @app.get("/kiosk/identify/{military_id}")
 async def identify_soldier(military_id: str):
-    # 1. חיפוש החייל
     soldier = await db.soldiers.find_one({"military_id": military_id})
     if not soldier:
         raise HTTPException(status_code=404, detail="חייל לא נמצא")
 
-    # 2. נתיב מלא ותקין (מבטיח שהקובץ יישמר בתיקייה הנכונה בתוך השרת)
     qr_file = f"{military_id}.png"
     qr_path = os.path.join(QR_DIR, qr_file)
-
-    # 3. יצירת ה-URL לסריקה - שים לב לשימוש ב-SERVER_IP הדינמי!
-    # אנחנו יוצרים את ה-QR מחדש בכל פעם שהקוד מורץ/הקובץ חסר עם ה-IP העדכני
     qr_url_to_encode = f"http://{SERVER_IP}:8080/soldiers/profile/{military_id}"
     
-    # ביטול ה-if os.path.exists זמנית כדי לוודא שזה מתעדכן עם ה-IP הנכון
     img = qrcode.make(qr_url_to_encode)
     img.save(qr_path)
-    print(f"Generated/Updated QR for {military_id} with URL: {qr_url_to_encode}")
 
     return {
+        "military_id": soldier["military_id"],
         "full_name": soldier["full_name"],
         "rank": soldier["rank"],
+        "unit": soldier.get("unit", "גולני"), # סנכרון ברירת המחדל
+        "mission_role": soldier.get("mission_role", "לוחם"), # סנכרון ברירת המחדל
         "assigned_vehicle": soldier["assigned_vehicle_id"],
-        "qr_url": f"/static/qrcodes/{qr_file}?v={os.path.getmtime(qr_path)}" # תוספת קטנה כדי למנוע Cache בדפדפן
+        "qr_url": f"/static/qrcodes/{qr_file}?v={os.path.getmtime(qr_path)}"
     }
 
 @app.get("/soldiers/profile/{military_id}", response_class=HTMLResponse)
@@ -174,65 +124,43 @@ async def get_soldier_profile(military_id: str):
     if not soldier: 
         return "<h1 style='text-align:center; padding-top:50px;'>❌ חייל לא נמצא במערכת</h1>"
     
-    # הגדרת צבעים לפי סטטוס או יחידה
     photo_url = soldier.get('photo_url')
-    if photo_url:
-        full_photo_url = f"http://{SERVER_IP}:8080{photo_url}"
-    else:
-        full_photo_url = "https://cdn-icons-png.flaticon.com/512/6142/6142226.png"
+    full_photo_url = f"http://{SERVER_IP}:8080{photo_url}" if photo_url else "https://cdn-icons-png.flaticon.com/512/6142/6142226.png"
 
     return f"""
-    <!DOCTYPE html>
     <html dir="rtl">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>כרטיס לוחם - {soldier['full_name']}</title>
         <style>
             body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }}
             .card {{ background: white; width: 90%; max-width: 350px; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; border-top: 8px solid #1b5e20; }}
             .header {{ background: #1b5e20; padding: 20px; color: white; }}
             .avatar-container {{ margin-top: -50px; position: relative; }}
-            .avatar {{ width: 100px; height: 100px; border-radius: 50%; border: 5px solid white; background: #eee; object-fit: cover; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }}
-            .info {{ padding: 20px 20px 30px; }}
-            h1 {{ margin: 10px 0 5px; font-size: 24px; color: #333; }}
-            .military-id {{ color: #666; font-size: 14px; margin-bottom: 20px; }}
-            .detail-row {{ display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee; text-align: right; }}
+            .avatar {{ width: 100px; height: 100px; border-radius: 50%; border: 5px solid white; background: #eee; object-fit: cover; }}
+            .info {{ padding: 20px; }}
+            .detail-row {{ display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee; }}
             .detail-label {{ font-weight: bold; color: #1b5e20; }}
-            .detail-value {{ color: #444; }}
-            .footer-status {{ background: #e8f5e9; color: #2e7d32; padding: 10px; font-weight: bold; font-size: 14px; }}
+            .footer-status {{ background: #e8f5e9; color: #2e7d32; padding: 10px; font-weight: bold; }}
         </style>
     </head>
     <body>
         <div class="card">
-            <div class="header">
-                <div style="font-size: 18px; font-weight: bold;">שבצ"ק-נט: כרטיס לוחם</div>
-            </div>
-            <div class="avatar-container">
-                <img src="{full_photo_url}" class="avatar" alt="תמונת לוחם">
-            </div>
+            <div class="header"><div style="font-size: 18px; font-weight: bold;">שבצ"ק-נט: כרטיס לוחם</div></div>
+            <div class="avatar-container"><img src="{full_photo_url}" class="avatar"></div>
             <div class="info">
                 <h1>{soldier['rank']} {soldier['full_name']}</h1>
-                <div class="military-id">מספר אישי: {soldier['military_id']}</div>
-                
-                <div class="detail-row">
-                    <span class="detail-label">📦 יחידה:</span>
-                    <span class="detail-value">{soldier.get('unit', 'גולני')}</span>
-                </div>
-                <div class="detail-row">
-                    <span class="detail-label">🎖️ תפקיד:</span>
-                    <span class="detail-value">{soldier.get('mission_role', 'לוחם')}</span>
-                </div>
-                <div class="detail-row" style="border-bottom: none;">
-                    <span class="detail-label">🚜 כלי משובץ:</span>
-                    <span class="detail-value" style="font-weight: bold;">{soldier['assigned_vehicle_id']}</span>
-                </div>
+                <div style="color: #666; margin-bottom: 20px;">מספר אישי: {soldier['military_id']}</div>
+                <div class="detail-row"><span class="detail-label">📦 יחידה:</span><span>{soldier.get('unit', 'גולני')}</span></div>
+                <div class="detail-row"><span class="detail-label">🎖️ תפקיד:</span><span>{soldier.get('mission_role', 'לוחם')}</span></div>
+                <div class="detail-row" style="border-bottom: none;"><span class="detail-label">🚜 כלי משובץ:</span><span style="font-weight: bold;">{soldier['assigned_vehicle_id']}</span></div>
             </div>
             <div class="footer-status">✅ לוחם מאושר לשיבוץ</div>
         </div>
     </body>
     </html>
     """
+
 # --- 4. מערכת אימות סריקת רכב (הדפים הירוקים) ---
 
 @app.get("/vehicle/check/{vehicle_id}", response_class=HTMLResponse)
@@ -261,23 +189,9 @@ async def verify_vehicle_assignment(vehicle_id: str = Form(...), military_id: st
         return HTMLResponse(f"<div style='{style} background:#d32f2f;'><h1>שגיאה</h1><p>מספר אישי לא קיים</p></div>")
     
     if soldier['assigned_vehicle_id'] == vehicle_id:
-        return HTMLResponse(f"""
-            <div style='{style} background:#2e7d32;'>
-                <h1 style='font-size:80px;'>✅</h1>
-                <h1>מאושר!</h1>
-                <h2>{soldier['rank']} {soldier['full_name']}</h2>
-                <p>התייצבת בהצלחה בכלי {vehicle_id}</p>
-            </div>
-        """)
+        return HTMLResponse(f"<div style='{style} background:#2e7d32;'><h1 style='font-size:80px;'>✅</h1><h1>מאושר!</h1><h2>{soldier['rank']} {soldier['full_name']}</h2><p>התייצבת בהצלחה בכלי {vehicle_id}</p></div>")
     else:
-        return HTMLResponse(f"""
-            <div style='{style} background:#d32f2f;'>
-                <h1 style='font-size:80px;'>🛑</h1>
-                <h1>טעות בכלי</h1>
-                <h2>{soldier['full_name']}, אינך שייך לכלי {vehicle_id}</h2>
-                <h3>הכלי שלך הוא: {soldier['assigned_vehicle_id']}</h3>
-            </div>
-        """)
+        return HTMLResponse(f"<div style='{style} background:#d32f2f;'><h1 style='font-size:80px;'>🛑</h1><h1>טעות בכלי</h1><h2>{soldier['full_name']}, אינך שייך לכלי {vehicle_id}</h2><h3>הכלי שלך הוא: {soldier['assigned_vehicle_id']}</h3></div>")
 
 # --- 5. ניהול QR לרכבים (למפקד) ---
 
