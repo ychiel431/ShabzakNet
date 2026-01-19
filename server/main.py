@@ -83,6 +83,66 @@ async def upload_soldiers_csv(file: UploadFile = File(...)):
             count += 1
     return {"status": "success", "message": f"עודכנו {count} חיילים"}
 
+
+# --- ניהול חיילים כללי (לניהול כ"א) ---
+@app.get("/admin/soldiers/list")
+async def get_all_soldiers():
+    try:
+        soldiers = await db.soldiers.find({}, {"_id": 0}).to_list(length=1000)
+        return soldiers
+    except Exception as e:
+        return {"error": str(e)}
+    
+# --- לוגיקת שיבוץ לוחמים (הוספה/הסרה) ---
+@app.post("/admin/assign-soldier")
+async def assign_soldier(
+    military_id: str = Form(...), 
+    vehicle_id: str = Form(...), 
+    override: bool = Form(False) # פרמטר חדש: האם לדרוס?
+):
+    soldier = await db.soldiers.find_one({"military_id": military_id})
+    if not soldier:
+        raise HTTPException(status_code=404, detail="חייל לא נמצא במערכת")
+    
+    current_vehicle = soldier.get("assigned_vehicle_id", "לא משובץ")
+    
+    # מנגנון בטיחות: אם החייל משובץ במקום אחר, והמפקד לא לחץ "אישור" לדריסה
+    if current_vehicle != "לא משובץ" and current_vehicle != vehicle_id and not override:
+        # מחזירים קוד שגיאה 409 (Conflict) עם פרטי השיבוץ הנוכחי
+        raise HTTPException(
+            status_code=409, 
+            detail=f"שים לב! החייל כבר משובץ ב-{current_vehicle}"
+        )
+    
+    # ביצוע השיבוץ (עדכון)
+    await db.soldiers.update_one(
+        {"military_id": military_id},
+        {"$set": {"assigned_vehicle_id": vehicle_id}}
+    )
+    return {"status": "success", "message": f"חייל {military_id} שובץ לכלי {vehicle_id}"}
+
+@app.post("/admin/unassign-soldier")
+async def unassign_soldier(military_id: str = Form(...)):
+    await db.soldiers.update_one(
+        {"military_id": military_id},
+        {"$set": {"assigned_vehicle_id": "לא משובץ"}}
+    )
+    return {"status": "success", "message": "השיבוץ בוטל"}    
+
+# --- הפקת QR לרכב (להדבקה על הכלי) ---
+@app.get("/admin/vehicle-qr/{vehicle_id}")
+async def get_vehicle_qr_link(vehicle_id: str):
+    qr_file = f"vehicle_{vehicle_id}.png"
+    qr_path = os.path.join(QR_DIR, qr_file)
+    # הלינק מוביל לדף האימות/סטטוס של הכלי
+    qr_url_to_encode = f"{CURRENT_BASE_URL}/vehicle/check/{vehicle_id}"
+    
+    img = qrcode.make(qr_url_to_encode)
+    img.save(qr_path)
+    
+    return {"qr_url": f"/static/qrcodes/{qr_file}?v={os.path.getmtime(qr_path)}"}
+
+
 @app.post("/admin/upload-photo/{military_id}")
 async def upload_photo(military_id: str, file: UploadFile = File(...)):
     ext = os.path.splitext(file.filename)[1]
@@ -94,6 +154,7 @@ async def upload_photo(military_id: str, file: UploadFile = File(...)):
     await db.soldiers.update_one({"military_id": military_id}, {"$set": {"photo_url": photo_url}})
     return {"status": "success", "photo_url": photo_url}
 
+
 # --- 3. מערכת הקיוסק (זיהוי חייל והפקת QR) ---
 @app.get("/kiosk/identify/{military_id}")
 async def identify_soldier(military_id: str):
@@ -103,18 +164,19 @@ async def identify_soldier(military_id: str):
 
     qr_file = f"{military_id}.png"
     qr_path = os.path.join(QR_DIR, qr_file)
-    qr_url_to_encode = f"http://{SERVER_IP}:8080/soldiers/profile/{military_id}"
+    qr_url_to_encode = f"{CURRENT_BASE_URL}/soldiers/profile/{military_id}"
     
     img = qrcode.make(qr_url_to_encode)
     img.save(qr_path)
 
+    # החזרת כל השדות הנדרשים לסנכרון מלא עם ה-Frontend
     return {
         "military_id": soldier["military_id"],
         "full_name": soldier["full_name"],
         "rank": soldier["rank"],
-        "unit": soldier.get("unit", "גולני"), # סנכרון ברירת המחדל
-        "mission_role": soldier.get("mission_role", "לוחם"), # סנכרון ברירת המחדל
-        "assigned_vehicle": soldier["assigned_vehicle_id"],
+        "unit": soldier.get("unit", "גולני"), # ערך ברירת מחדל אחיד
+        "mission_role": soldier.get("mission_role", "לוחם"), # ערך ברירת מחדל אחיד
+        "assigned_vehicle": soldier.get("assigned_vehicle_id", "לא משובץ"),
         "qr_url": f"/static/qrcodes/{qr_file}?v={os.path.getmtime(qr_path)}"
     }
 
@@ -162,22 +224,60 @@ async def get_soldier_profile(military_id: str):
     """
 
 # --- 4. מערכת אימות סריקת רכב (הדפים הירוקים) ---
-
 @app.get("/vehicle/check/{vehicle_id}", response_class=HTMLResponse)
 async def check_vehicle_page(vehicle_id: str):
-    return f"""
-    <html><body style="font-family:Arial; text-align:center; background:#333; color:white; padding:50px;">
-        <h1>בדיקת כלי: {vehicle_id}</h1>
-        <div style="background:#444; padding:30px; border-radius:10px; display:inline-block;">
-            <p>הכנס מספר אישי לאימות הגעה:</p>
-            <form action="/vehicle/verify" method="post">
-                <input type="hidden" name="vehicle_id" value="{vehicle_id}">
-                <input type="text" name="military_id" placeholder="מספר אישי" style="padding:10px; font-size:18px; width:200px;" required>
-                <br><br>
-                <button type="submit" style="background:#2e7d32; color:white; padding:10px 20px; border:none; border-radius:5px; cursor:pointer;">בדוק שיבוץ</button>
-            </form>
+    # שליפת נתוני הכלי והחיילים המשובצים אליו
+    all_soldiers = list(db_sync.soldiers.find({"assigned_vehicle_id": vehicle_id}, {"_id": 0}))
+    current_date = "19.1.2026" # תאריך מעודכן
+
+    # יצירת רשימת החיילים ב-HTML עם עיצוב אלגנטי
+    soldiers_html = ""
+    for s in all_soldiers:
+        soldiers_html += f"""
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid #eee;">
+            <div style="text-align: right;">
+                <div style="font-weight: bold; font-size: 1.1rem;">{s.get('rank', '')} {s.get('full_name', '')}</div>
+                <div style="color: #666; font-size: 0.9rem;">מ"א: {s.get('military_id', '')}</div>
+            </div>
+            <div style="background: #f1f8e9; color: #1b5e20; padding: 5px 12px; border-radius: 15px; font-weight: bold; font-size: 0.9rem;">
+                {s.get('mission_role', 'לוחם')}
+            </div>
         </div>
-    </body></html>
+        """
+
+    # אם הכלי ריק
+    if not all_soldiers:
+        soldiers_html = "<div style='padding: 40px; color: #666;'>אין לוחמים משובצים לכלי זה כרגע</div>"
+
+    return f"""
+    <html dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {{ font-family: 'Segoe UI', sans-serif; background: #f4f6f8; margin: 0; padding: 20px; }}
+            .container {{ background: white; max-width: 500px; margin: 0 auto; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-top: 10px solid #1b5e20; }}
+            .header {{ background: #1b5e20; color: white; padding: 25px; text-align: center; }}
+            .info-bar {{ background: #e8f5e9; padding: 10px; text-align: center; font-size: 0.9rem; font-weight: bold; color: #2e7d32; border-bottom: 1px solid #c8e6c9; }}
+            .list-container {{ padding: 10px; }}
+            .footer {{ text-align: center; padding: 20px; color: #999; font-size: 0.8rem; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1 style="margin: 0; font-size: 1.8rem;">שבצ"ק כלי: {vehicle_id}</h1>
+            </div>
+            <div class="info-bar">
+                תאריך שיבוץ: {current_date} | סה"כ משובצים: {len(all_soldiers)}
+            </div>
+            <div class="list-container">
+                {soldiers_html}
+            </div>
+            <div class="footer">מערכת שבזאק-נט v2.0 - ניהול חמ"ל</div>
+        </div>
+    </body>
+    </html>
     """
 
 @app.post("/vehicle/verify", response_class=HTMLResponse)
