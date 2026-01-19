@@ -279,20 +279,81 @@ async def check_vehicle_page(vehicle_id: str):
     </body>
     </html>
     """
+# --- עדכון תצוגת הסריקה ב-main.py ---
 
-@app.post("/vehicle/verify", response_class=HTMLResponse)
-async def verify_vehicle_assignment(vehicle_id: str = Form(...), military_id: str = Form(...)):
+@app.post("/verify")
+@app.get("/verify", response_class=HTMLResponse)
+async def verify_vehicle_assignment(vehicle_id: str = None, military_id: str = None):
+    # הבאת נתונים מה-DB
     soldier = await db.soldiers.find_one({"military_id": military_id})
-    style = "text-align:center; font-family:Arial; padding:100px; color:white; height:100vh;"
+    import datetime
+    current_date = datetime.datetime.now().strftime("%d.%m.%Y")
     
-    if not soldier:
-        return HTMLResponse(f"<div style='{style} background:#d32f2f;'><h1>שגיאה</h1><p>מספר אישי לא קיים</p></div>")
-    
-    if soldier['assigned_vehicle_id'] == vehicle_id:
-        return HTMLResponse(f"<div style='{style} background:#2e7d32;'><h1 style='font-size:80px;'>✅</h1><h1>מאושר!</h1><h2>{soldier['rank']} {soldier['full_name']}</h2><p>התייצבת בהצלחה בכלי {vehicle_id}</p></div>")
-    else:
-        return HTMLResponse(f"<div style='{style} background:#d32f2f;'><h1 style='font-size:80px;'>🛑</h1><h1>טעות בכלי</h1><h2>{soldier['full_name']}, אינך שייך לכלי {vehicle_id}</h2><h3>הכלי שלך הוא: {soldier['assigned_vehicle_id']}</h3></div>")
+    # עיצוב CSS תואם למדבקה ולמותג
+    style = """
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; direction: rtl; background: #f4f6f8; }
+        .card { max-width: 450px; margin: 20px auto; background: white; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2); border-top: 8px solid #1b5e20; text-align: center; }
+        .header { background: #1b5e20; color: white; padding: 20px; font-weight: bold; font-size: 24px; }
+        .content { padding: 30px; }
+        .date { color: #666; font-size: 14px; margin-bottom: 10px; font-weight: bold; }
+        .avatar { width: 120px; height: 120px; border-radius: 50%; background: #eee; margin: -60px auto 20px; border: 5px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.1); object-fit: cover; }
+        .name { font-size: 32px; font-weight: bold; margin: 10px 0; color: #333; }
+        .id { color: #888; margin-bottom: 20px; font-size: 18px; }
+        .info-row { display: flex; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid #eee; font-size: 20px; }
+        .label { color: #1b5e20; font-weight: bold; }
+        .status-box { margin-top: 25px; padding: 20px; border-radius: 15px; font-size: 24px; font-weight: bold; }
+        .approved { background: #e8f5e9; color: #2e7d32; border: 2px solid #2e7d32; }
+        .error { background: #ffebee; color: #c62828; border: 2px solid #c62828; }
+        .big-icon { font-size: 60px; margin-bottom: 10px; }
+    </style>
+    """
 
+    if not soldier:
+        return HTMLResponse(f"{style}<div class='card'><div class='header'>שבצ\"ק-נט: שגיאה</div><div class='content'><div class='status-box error'>🛑 חייל לא נמצא במערכת</div></div></div>")
+
+    # בדיקה אם החייל משובץ לכלי הנכון
+    is_correct = soldier.get('assigned_vehicle_id') == vehicle_id
+    status_class = "approved" if is_correct else "error"
+    status_icon = "✅" if is_correct else "🛑"
+    status_text = "מאושר לשיבוץ" if is_correct else f"טעות בכלי! רשום ל: {soldier.get('assigned_vehicle_id')}"
+
+    html_content = f"""
+    <html>
+        <head>{style}</head>
+        <body>
+            <div class="card">
+                <div class="header">שבצ"ק-נט: כרטיס לוחם</div>
+                <div class="content">
+                    <div class="date">תאריך סריקה: {current_date}</div>
+                    <div style="height: 60px;"></div> <div class="avatar" style="line-height: 120px; font-size: 50px; color: #1b5e20;">{soldier['full_name'][0]}</div>
+                    
+                    <div class="name">{soldier['rank']} {soldier['full_name']}</div>
+                    <div class="id">מספר אישי: {soldier['military_id']}</div>
+                    
+                    <div class="info-row">
+                        <span class="label">📦 יחידה:</span>
+                        <span>{soldier.get('unit', 'גולני')}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">🎖️ תפקיד:</span>
+                        <span>{soldier.get('mission_role', 'לוחם')}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">🚜 כלי יעד:</span>
+                        <span style="font-weight:bold;">{vehicle_id}</span>
+                    </div>
+
+                    <div class="status-box {status_class}">
+                        <div class="big-icon">{status_icon}</div>
+                        {status_text}
+                    </div>
+                </div>
+            </div>
+        </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 # --- 5. ניהול QR לרכבים (למפקד) ---
 
 @app.post("/admin/vehicle-qr/{vehicle_id}")

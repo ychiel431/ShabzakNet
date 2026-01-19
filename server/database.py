@@ -4,7 +4,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import MongoClient
 
 # --- ניהול כתובת השרת ---
-SERVER_IP = "10.154.103.124"
+SERVER_IP = "192.168.7.19"
 PORT = 8080
 CURRENT_BASE_URL = f"http://{SERVER_IP}:{PORT}"
 

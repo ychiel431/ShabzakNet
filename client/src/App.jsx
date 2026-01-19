@@ -20,7 +20,7 @@ import { LinearProgress } from '@mui/material'; // להוסיף בתוך ה-impo
 import PieChartIcon from '@mui/icons-material/PieChart';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import GroupIcon from '@mui/icons-material/Group';
-
+import DashboardIcon from '@mui/icons-material/Dashboard'; 
 // --- הגדרות שרת ---
 const SERVER_IP = window.location.hostname;
 const API_BASE_URL = `http://${SERVER_IP}:8080`;
@@ -32,6 +32,31 @@ const CATEGORIES = [
   { id: 'NAMER', name: 'נמר', color: '#558b2f' },
   { id: 'ZEEV', name: 'זאב', color: '#2e7d32' }
 ];
+
+// רכיב עזר להרצת מספרים (Count Up Animation)
+const AnimatedNumber = ({ value }) => {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let start = 0;
+    const end = parseInt(value, 10);
+    if (start === end) return;
+
+    let timer = setInterval(() => {
+      start += Math.ceil(end / 50); // מהירות הריצה
+      if (start >= end) {
+        start = end;
+        clearInterval(timer);
+      }
+      setCount(start);
+    }, 20); // כל 20 מילישניות
+
+    return () => clearInterval(timer);
+  }, [value]);
+
+  return <span>{count}</span>;
+};
+
 
 function App() {
   // --- ניהול מצבי תצוגה ---
@@ -91,18 +116,45 @@ function App() {
         fetch(`${API_BASE_URL}/admin/soldiers/list`)
       ]);
       
-      const vData = await resVehicles.json();
+      let vData = await resVehicles.json();
       const sData = await resSoldiers.json();
 
-      const totalSol = sData.length;
-      // סופרים כמה משובצים (לא כולל "לא משובץ" או null)
-      const assignedSol = sData.filter(s => s.assigned_vehicle_id && s.assigned_vehicle_id !== 'לא משובץ').length;
-      
-      const totalVeh = vData.length;
-      // סופרים כמה רכבים מלאים (לפי הקיבולת)
-      const fullVeh = vData.filter(v => v.current_occupancy >= v.capacity).length;
+      // --- התיקון: הזרקת קיבולת ברירת מחדל אם חסרה ---
+      vData = vData.map(v => {
+        let defaultCap = 4; // ברירת מחדל כללית
+        
+        // הגדרת קיבולת לפי השם של הרכב
+        if (v.id.includes('HUMMER')) defaultCap = 5;   // האמר: נהג + 4
+        if (v.id.includes('ZEEV')) defaultCap = 8;     // זאב
+        if (v.id.includes('NAMER')) defaultCap = 11;   // נמר (כיתה + מפקדים)
+        if (v.id.includes('MERKAVA')) defaultCap = 4;  // טנק: צוות של 4
 
-      // חישוב אחוז מוכנות (חצי משקל לאדם, חצי לרכבים)
+        // אם יש קיבולת אמיתית בדאטה-בייס נשתמש בה, אחרת נשתמש בברירת המחדל
+        const finalCapacity = (v.capacity && v.capacity > 0) ? v.capacity : defaultCap;
+        
+        return { ...v, capacity: finalCapacity };
+      });
+      // ------------------------------------------------
+
+      const totalSol = sData.length || 0;
+      const assignedSol = sData.filter(s => s.assigned_vehicle_id && s.assigned_vehicle_id.trim() !== '' && s.assigned_vehicle_id !== 'לא משובץ').length;
+      
+      const totalVeh = vData.length || 0;
+      
+      // עכשיו החישוב יעבוד כי לכולם יש capacity
+
+      // בתוך fetchStats - החלף את שורת החישוב של fullVeh
+      const fullVeh = vData.filter(v => {
+        // הגדרת סף מינימום למילוי לפי סוג
+        let minToFull = 4; 
+        if (v.id.includes('NAMER')) minToFull = 11;
+        if (v.id.includes('ZEEV')) minToFull = 12;
+        
+        // הכלי נחשב מלא אם הגענו לסף המינימום, בלי קשר למה שכתוב בקיבולת המשתנה
+        return v.current_occupancy >= minToFull;
+      }).length;
+      
+
       const solPercent = totalSol > 0 ? (assignedSol / totalSol) : 0;
       const vehPercent = totalVeh > 0 ? (fullVeh / totalVeh) : 0;
       const readiness = Math.round(((solPercent + vehPercent) / 2) * 100);
@@ -116,6 +168,119 @@ function App() {
       });
     } catch (e) { console.error("Error fetching stats:", e); }
   };
+
+  // --- מסך דשבורד מפקד חדש ומעוצב ---
+  // --- מסך דשבורד מפקד חדש ומעוצב עם אפקטים ותיקון נתונים ---
+  const renderDashboardPage = () => {
+    // חישוב אחוזים למסך (סנכרון מלא עם fetchStats)
+    const solPercent = stats.totalSoldiers > 0 ? Math.round((stats.assignedSoldiers / stats.totalSoldiers) * 100) : 0;
+    const vehPercent = stats.totalVehicles > 0 ? Math.round((stats.fullVehicles / stats.totalVehicles) * 100) : 0;
+
+    return (
+      <Container maxWidth="xl" sx={{ mt: 4, px: 4, pb: 8, animation: 'fadeIn 0.8s ease-in-out' }}>
+        <style>
+          {`
+            @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+            @keyframes ripple { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.4); opacity: 0; } }
+            .cool-card { transition: all 0.3s ease; border-radius: 20px !important; }
+            .cool-card:hover { transform: translateY(-5px); box-shadow: 0 12px 30px rgba(0,0,0,0.12) !important; }
+          `}
+        </style>
+
+        {/* כותרת וכפתור חזרה */}
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 5, justifyContent: 'space-between' }}>
+           <Typography variant="h3" sx={{ fontWeight: 'bold', color: '#1b5e20' }}>
+            📊 תמונת מצב גדודית
+          </Typography>
+          <Button startIcon={<ArrowBackIcon />} onClick={() => setView('menu')} variant="contained" sx={{ bgcolor: '#1b5e20', borderRadius: 3 }}>
+            חזרה לתפריט
+          </Button>
+        </Box>
+
+        <Grid container spacing={4}>
+          {/* כרטיס 1: כשירות מבצעית */}
+          <Grid item xs={12} md={4}>
+            <Paper elevation={8} sx={{ p: 4, bgcolor: '#2e7d32', color: 'white', borderRadius: 5, height: '100%', position: 'relative', overflow: 'hidden' }}>
+              <AssessmentIcon sx={{ fontSize: 120, opacity: 0.1, position: 'absolute', right: -10, bottom: -10 }} />
+              <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 1 }}>כשירות מבצעית</Typography>
+              <Typography variant="h1" sx={{ fontWeight: '900', mb: 2 }}>
+                <AnimatedNumber value={stats.readiness} />%
+              </Typography>
+              <LinearProgress variant="determinate" value={stats.readiness} sx={{ height: 12, borderRadius: 6, bgcolor: 'rgba(255,255,255,0.2)', '& .MuiLinearProgress-bar': { bgcolor: '#76ff03' } }} />
+            </Paper>
+          </Grid>
+
+          {/* כרטיס 2: כוח אדם */}
+          <Grid item xs={12} md={4}>
+            <Paper elevation={4} className="cool-card" sx={{ p: 4, textAlign: 'center', height: '100%' }}>
+              <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 3, color: '#1565c0' }}>כוח אדם</Typography>
+              <Box sx={{ position: 'relative', width: 150, height: 150, mx: 'auto', borderRadius: '50%', background: `conic-gradient(#1565c0 ${solPercent}%, #e3f2fd 0)` }}>
+                <Box sx={{ position: 'absolute', inset: 10, bgcolor: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#1565c0' }}>{solPercent}%</Typography>
+                </Box>
+              </Box>
+              <Typography variant="h6" sx={{ mt: 3 }}>{stats.assignedSoldiers} / {stats.totalSoldiers} משובצים</Typography>
+            </Paper>
+          </Grid>
+
+          {/* כרטיס 3: צי רכב */}
+          <Grid item xs={12} md={4}>
+            <Paper elevation={4} className="cool-card" sx={{ p: 4, textAlign: 'center', height: '100%' }}>
+              <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 3, color: '#2e7d32' }}>צי רכב</Typography>
+              <Box sx={{ position: 'relative', width: 150, height: 150, mx: 'auto', borderRadius: '50%', background: `conic-gradient(#2e7d32 ${vehPercent}%, #e8f5e9 0)` }}>
+                <Box sx={{ position: 'absolute', inset: 10, bgcolor: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#2e7d32' }}>{vehPercent}%</Typography>
+                </Box>
+              </Box>
+              <Typography variant="h6" sx={{ mt: 3 }}>{stats.fullVehicles} / {stats.totalVehicles} כלים מלאים</Typography>
+            </Paper>
+          </Grid>
+
+          {/* פירוט לפי סוגי כלים - תיקון החישוב שביקשת */}
+          <Grid item xs={12}>
+            <Paper elevation={2} sx={{ p: 4, borderRadius: 5 }}>
+              <Typography variant="h5" sx={{ mb: 4, fontWeight: 'bold' }}>📋 פירוט לפי סוגי כלים</Typography>
+              <Grid container spacing={3}>
+                {CATEGORIES.map(cat => {
+                  const typeVehicles = vehicles.filter(v => v.id.startsWith(cat.id));
+                  const totalType = typeVehicles.length;
+
+                  // הגדרת סף המילוי בדיוק לפי הנתונים המבצעיים שלך
+                  let minToFull = 4; 
+                  if (cat.id === 'NAMER') minToFull = 11;
+                  if (cat.id === 'ZEEV') minToFull = 12;
+
+                  const fullType = typeVehicles.filter(v => v.current_occupancy >= minToFull).length;
+                  const percent = totalType > 0 ? Math.round((fullType / totalType) * 100) : 0;
+                  
+                  return (
+                    <Grid item xs={12} sm={6} md={3} key={cat.id}>
+                      <Box className="cool-card" sx={{ p: 2, border: '1px solid #eee', borderRadius: 4, position: 'relative' }}>
+                        {/* אפקט דופק ליד כלים מלאים */}
+                        {percent === 100 && totalType > 0 && (
+                          <Box sx={{ position: 'absolute', top: 10, right: 10, width: 8, height: 8, bgcolor: '#4caf50', borderRadius: '50%', animation: 'ripple 1.5s infinite' }} />
+                        )}
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                          <DirectionsBusIcon sx={{ color: cat.color, mr: 1 }} />
+                          <Typography fontWeight="bold">{cat.name}</Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                          <Typography variant="h6" color={cat.color} fontWeight="bold">{percent}%</Typography>
+                          <Typography variant="caption" sx={{ mt: 1 }}>{fullType} / {totalType}</Typography>
+                        </Box>
+                        <LinearProgress variant="determinate" value={percent} sx={{ height: 8, borderRadius: 4, bgcolor: '#eee', '& .MuiLinearProgress-bar': { bgcolor: cat.color } }} />
+                      </Box>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            </Paper>
+          </Grid>
+        </Grid>
+      </Container>
+    );
+  };
+
 
   const fetchAllSoldiers = async () => {
     setLoading(true);
@@ -216,80 +381,113 @@ const handleAssign = async () => {
 
   // 1. עמדת קיוסק (QR)
   const renderKiosk = () => (
-    <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 64px)', width: '100%' }}>
-      <Button onClick={() => {setView('menu'); setGeneratedQr(null); setMilitaryIdInput('');}} variant="outlined" sx={{ mb: 3 }}>
-        חזרה לתפריט
-      </Button>
-      
-      <Paper elevation={10} sx={{ p: 5, width: '90%', maxWidth: 550, borderRadius: 6, textAlign: 'center' }}>
-        {!generatedQr ? (
-          <>
-            <Typography variant="h3" sx={{ fontWeight: 'bold', color: '#1b5e20', mb: 3 }}>מרכז הנפקת QR</Typography>
-            
-            {/* בורר מצבים */}
-            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mb: 4 }}>
-              <Button 
-                variant={kioskMode === 'soldier' ? "contained" : "outlined"} 
-                onClick={() => setKioskMode('soldier')} 
-                sx={{ bgcolor: kioskMode === 'soldier' ? '#1b5e20' : '', borderRadius: 2, px: 4, fontSize: '1.1rem' }}
-              >
-                לוחם (מ"א)
-              </Button>
-              <Button 
-                variant={kioskMode === 'vehicle' ? "contained" : "outlined"} 
-                onClick={() => setKioskMode('vehicle')} 
-                sx={{ bgcolor: kioskMode === 'vehicle' ? '#1b5e20' : '', borderRadius: 2, px: 4, fontSize: '1.1rem' }}
-              >
-                כלי (ID)
-              </Button>
-            </Box>
-
-            <TextField 
-              fullWidth 
-              autoFocus 
-              label={kioskMode === 'soldier' ? "הקש מספר אישי" : "הקש ID כלי (לדוגמה: HUMMER-1)"} 
-              value={militaryIdInput} 
-              onChange={(e) => setMilitaryIdInput(e.target.value)} 
-              sx={{ mb: 4 }} 
-              inputProps={{ style: { fontSize: '2.5rem', textAlign: 'center', fontWeight: 'bold' } }} 
-            />
-            
+  <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 64px)', width: '100%' }}>
+    <Button 
+      onClick={() => {setView('menu'); setGeneratedQr(null); setMilitaryIdInput('');}} 
+      variant="outlined" 
+      sx={{ mb: 3 }}
+    >
+      חזרה לתפריט
+    </Button>
+    
+    {/* Paper עם הגדרות לחיתוך הפינות עבור ה-Header הירוק */}
+    <Paper 
+      elevation={10} 
+      sx={{ 
+        p: 0, 
+        width: '95%', 
+        maxWidth: 550, 
+        borderRadius: '20px', 
+        overflow: 'hidden', 
+        textAlign: 'center', 
+        borderTop: '8px solid #1b5e20' 
+      }}
+    >
+      {!generatedQr ? (
+        <Box sx={{ p: 5 }}>
+          <Typography variant="h3" sx={{ fontWeight: 'bold', color: '#1b5e20', mb: 3 }}>מרכז הנפקת QR</Typography>
+          
+          <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mb: 4 }}>
             <Button 
-              fullWidth 
-              variant="contained" 
-              size="large" 
-              sx={{ height: 80, fontSize: 24, bgcolor: '#1b5e20', borderRadius: 4 }} 
-              onClick={handleGenerateQr}
-              disabled={loading}
+              variant={kioskMode === 'soldier' ? "contained" : "outlined"} 
+              onClick={() => setKioskMode('soldier')} 
+              sx={{ bgcolor: kioskMode === 'soldier' ? '#1b5e20' : '', borderRadius: 2, px: 4, fontSize: '1.1rem' }}
             >
-                {loading ? <CircularProgress color="inherit" /> : "הפק מדבקה"}
+              לוחם (מ"א)
             </Button>
-          </>
-        ) : (
-          <Box sx={{ direction: 'rtl' }}>
-            {/* תוצאת QR */}
-            <Typography variant="h3" sx={{ fontWeight: 'bold', color: '#1b5e20' }}>{generatedQr.title}</Typography>
-            <Typography variant="h5" color="text.secondary" sx={{ mt: 1 }}>{generatedQr.subtitle}</Typography>
+            <Button 
+              variant={kioskMode === 'vehicle' ? "contained" : "outlined"} 
+              onClick={() => setKioskMode('vehicle')} 
+              sx={{ bgcolor: kioskMode === 'vehicle' ? '#1b5e20' : '', borderRadius: 2, px: 4, fontSize: '1.1rem' }}
+            >
+              כלי (ID)
+            </Button>
+          </Box>
+
+          <TextField 
+            fullWidth 
+            autoFocus 
+            label={kioskMode === 'soldier' ? "הקש מספר אישי" : "הקש ID כלי (לדוגמה: HUMMER-1)"} 
+            value={militaryIdInput} 
+            onChange={(e) => setMilitaryIdInput(e.target.value)} 
+            sx={{ mb: 4 }} 
+            inputProps={{ style: { fontSize: '2.5rem', textAlign: 'center', fontWeight: 'bold' } }} 
+          />
+          
+          <Button 
+            fullWidth 
+            variant="contained" 
+            size="large" 
+            sx={{ height: 80, fontSize: 24, bgcolor: '#1b5e20', borderRadius: 4 }} 
+            onClick={handleGenerateQr}
+            disabled={loading}
+          >
+              {loading ? <CircularProgress color="inherit" /> : "הפק מדבקה"}
+          </Button>
+        </Box>
+      ) : (
+        <Box sx={{ direction: 'rtl' }}>
+          {/* ה-Header הירוק שסונכרן מהמובייל */}
+          <Box sx={{ bgcolor: '#1b5e20', py: 2, color: 'white' }}>
+            <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+              שבצ"ק-נט: {generatedQr.isVehicle ? "מדבקת רכב" : "כרטיס לוחם"}
+            </Typography>
+          </Box>
+
+          <Box sx={{ p: 3 }}>
+            {/* הצגת התאריך שביקשת */}
+            <Typography variant="subtitle2" sx={{ mb: 1, color: '#666', fontWeight: 'bold' }}>
+              תאריך: {new Date().toLocaleDateString('he-IL')}
+            </Typography>
+
+            <Typography variant="h3" sx={{ fontWeight: 'bold', color: '#1b5e20', mb: 0.5 }}>
+              {generatedQr.title}
+            </Typography>
+            <Typography variant="h5" color="text.secondary" sx={{ mb: 2 }}>
+              {generatedQr.subtitle}
+            </Typography>
             
-            <Box sx={{ p: 2, bgcolor: 'white', display: 'inline-block', borderRadius: 4, border: '2px solid #1b5e20', my: 3 }}>
-              <img src={`${API_BASE_URL}${generatedQr.qr_url}`} alt="QR" style={{ width: 300, height: 300 }} />
+            <Box sx={{ p: 2, bgcolor: 'white', display: 'inline-block', borderRadius: 4, border: '1px solid #ddd', my: 2 }}>
+              <img src={`${API_BASE_URL}${generatedQr.qr_url}`} alt="QR" style={{ width: 280, height: 280 }} />
             </Box>
             
-            <Box sx={{ p: 2, bgcolor: generatedQr.isVehicle ? '#e3f2fd' : '#f1f8e9', borderRadius: 3, border: `3px solid ${generatedQr.isVehicle ? '#1565c0' : '#2e7d32'}` }}>
-               <Typography variant="h3" sx={{ fontWeight: 'bold', color: generatedQr.isVehicle ? '#1565c0' : '#1b5e20' }}>
+            {/* פס השיבוץ המבצעי והרחב */}
+            <Box sx={{ mt: 2, p: 2, bgcolor: generatedQr.isVehicle ? '#e3f2fd' : '#f1f8e9', borderRadius: 3, border: `3px solid ${generatedQr.isVehicle ? '#1565c0' : '#2e7d32'}` }}>
+               <Typography variant="h2" sx={{ fontWeight: 'bold', color: generatedQr.isVehicle ? '#1565c0' : '#1b5e20' }}>
                  {generatedQr.mainDetail}
                </Typography>
             </Box>
             
             <Box sx={{ display: 'flex', gap: 2, mt: 4 }}>
-                <Button fullWidth variant="outlined" size="large" onClick={() => window.print()}>הדפס</Button>
-                <Button fullWidth variant="contained" size="large" onClick={() => {setGeneratedQr(null); setMilitaryIdInput('');}} sx={{ bgcolor: '#1b5e20' }}>הבא בתור</Button>
+                <Button fullWidth variant="outlined" size="large" onClick={() => window.print()} sx={{ borderRadius: '10px' }}>הדפס מדבקה</Button>
+                <Button fullWidth variant="contained" size="large" onClick={() => {setGeneratedQr(null); setMilitaryIdInput('');}} sx={{ bgcolor: '#1b5e20', borderRadius: '10px' }}>הבא בתור</Button>
             </Box>
           </Box>
-        )}
-      </Paper>
-    </Box>
-  );
+        </Box>
+      )}
+    </Paper>
+  </Box>
+);
 
   const renderStatsDashboard = () => (
     <Grid container spacing={3} sx={{ mb: 6, px: 4 }}>
@@ -479,39 +677,42 @@ const handleAssign = async () => {
           {view !== 'menu' && <Button color="inherit" onClick={() => setView('menu')}>חזרה לתפריט ראשי</Button>}
         </Toolbar>
       </AppBar>
-
-      {/* תפריט ראשי */}
+{/* תפריט ראשי מעודכן - 4 קוביות */}
       {view === 'menu' && (
-        <Container maxWidth={false} sx={{ mt: 5, textAlign: 'center' }}>
-            <Typography variant="h1" sx={{ fontWeight: 'bold', color: '#1b5e20', mb: 6, fontSize: '5rem' }}>חמ"ל שבצ"ק-נט</Typography>
+        <Container maxWidth={false} sx={{ mt: 8, textAlign: 'center' }}>
+            <Typography variant="h1" sx={{ fontWeight: 'bold', color: '#1b5e20', mb: 8, fontSize: '5rem' }}>חמ"ל שבצ"ק-נט</Typography>
             
-            {/* --- כאן התיקון של שלב 6: הוספת הדשבורד --- */}
-            {renderStatsDashboard()}
-            {/* ------------------------------------------- */}
+            <Grid container spacing={4} justifyContent="center" sx={{ px: 4, maxWidth: '1600px', mx: 'auto' }}>
+                
+                {/* 1. דשבורד מפקד (החדש!) */}
+                <Grid item xs={12} sm={6} md={3} onClick={() => setView('dashboard')}>
+                    <Paper elevation={10} sx={{ p: 4, height: 250, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: 6, transition: '0.3s', borderBottom: '6px solid #f9a825', '&:hover': { transform: 'translateY(-10px)', bgcolor: '#fffde7' } }}>
+                        <DashboardIcon sx={{ fontSize: 100, color: '#fbc02d' }} />
+                        <Typography variant="h4" sx={{ mt: 2, fontWeight: 'bold', color: '#333' }}>תמונת מצב</Typography>
+                    </Paper>
+                </Grid>
 
-            <Grid container spacing={8} justifyContent="center" sx={{ mt: 2 }}>
-                
-                {/* קוביה 1: עמדת QR */}
-                <Grid item xs={12} md={4} onClick={() => setView('kiosk')}>
-                    <Paper elevation={10} sx={{ p: 8, cursor: 'pointer', borderRadius: 6, transition: '0.3s', '&:hover': { transform: 'scale(1.05)', bgcolor: '#f1f8e9' } }}>
-                        <QrCodeScannerIcon sx={{ fontSize: 150, color: '#1b5e20' }} />
-                        <Typography variant="h3" sx={{ mt: 2, fontWeight: 'bold' }}>עמדת QR</Typography>
+                {/* 2. עמדת QR */}
+                <Grid item xs={12} sm={6} md={3} onClick={() => setView('kiosk')}>
+                    <Paper elevation={10} sx={{ p: 4, height: 250, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: 6, transition: '0.3s', borderBottom: '6px solid #1b5e20', '&:hover': { transform: 'translateY(-10px)', bgcolor: '#f1f8e9' } }}>
+                        <QrCodeScannerIcon sx={{ fontSize: 100, color: '#2e7d32' }} />
+                        <Typography variant="h4" sx={{ mt: 2, fontWeight: 'bold', color: '#333' }}>עמדת QR</Typography>
                     </Paper>
                 </Grid>
                 
-                {/* קוביה 2: ניהול כלים */}
-                <Grid item xs={12} md={4} onClick={() => setView('fleet')}>
-                    <Paper elevation={10} sx={{ p: 8, cursor: 'pointer', borderRadius: 6, transition: '0.3s', '&:hover': { transform: 'scale(1.05)', bgcolor: '#e3f2fd' } }}>
-                        <DirectionsBusIcon sx={{ fontSize: 150, color: '#1565c0' }} />
-                        <Typography variant="h3" sx={{ mt: 2, fontWeight: 'bold' }}>ניהול כלים</Typography>
+                {/* 3. ניהול כלים */}
+                <Grid item xs={12} sm={6} md={3} onClick={() => setView('fleet')}>
+                    <Paper elevation={10} sx={{ p: 4, height: 250, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: 6, transition: '0.3s', borderBottom: '6px solid #1565c0', '&:hover': { transform: 'translateY(-10px)', bgcolor: '#e3f2fd' } }}>
+                        <DirectionsBusIcon sx={{ fontSize: 100, color: '#1565c0' }} />
+                        <Typography variant="h4" sx={{ mt: 2, fontWeight: 'bold', color: '#333' }}>ניהול כלים</Typography>
                     </Paper>
                 </Grid>
                 
-                {/* קוביה 3: ניהול לוחמים */}
-                <Grid item xs={12} md={4} onClick={() => setView('soldiers')}>
-                    <Paper elevation={10} sx={{ p: 8, cursor: 'pointer', borderRadius: 6, transition: '0.3s', '&:hover': { transform: 'scale(1.05)', bgcolor: '#fff3e0' } }}>
-                        <BadgeIcon sx={{ fontSize: 150, color: '#e65100' }} />
-                        <Typography variant="h3" sx={{ mt: 2, fontWeight: 'bold' }}>ניהול לוחמים</Typography>
+                {/* 4. ניהול לוחמים */}
+                <Grid item xs={12} sm={6} md={3} onClick={() => setView('soldiers')}>
+                    <Paper elevation={10} sx={{ p: 4, height: 250, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: 6, transition: '0.3s', borderBottom: '6px solid #e65100', '&:hover': { transform: 'translateY(-10px)', bgcolor: '#fff3e0' } }}>
+                        <BadgeIcon sx={{ fontSize: 100, color: '#e65100' }} />
+                        <Typography variant="h4" sx={{ mt: 2, fontWeight: 'bold', color: '#333' }}>ניהול לוחמים</Typography>
                     </Paper>
                 </Grid>
 
@@ -523,6 +724,7 @@ const handleAssign = async () => {
       {view === 'kiosk' && renderKiosk()}
       {view === 'fleet' && renderFleet()}
       {view === 'soldiers' && renderSoldiersManager()}
+      {view === 'dashboard' && renderDashboardPage()}
 
 
       {/* --- דיאלוגים (חלונות קופצים) --- */}
