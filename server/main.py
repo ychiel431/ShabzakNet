@@ -156,6 +156,7 @@ async def upload_photo(military_id: str, file: UploadFile = File(...)):
 
 
 # --- 3. מערכת הקיוסק (זיהוי חייל והפקת QR) ---
+# חפש את הפונקציה הזו ב-main.py והחלף אותה
 @app.get("/kiosk/identify/{military_id}")
 async def identify_soldier(military_id: str):
     soldier = await db.soldiers.find_one({"military_id": military_id})
@@ -164,19 +165,21 @@ async def identify_soldier(military_id: str):
 
     qr_file = f"{military_id}.png"
     qr_path = os.path.join(QR_DIR, qr_file)
-    qr_url_to_encode = f"{CURRENT_BASE_URL}/soldiers/profile/{military_id}"
+    
+    # התיקון: הלינק עכשיו מפנה ל-verify. כך הטלפון יפתח את העיצוב החדש והתקין.
+    v_id = soldier.get("assigned_vehicle_id", "לא משובץ")
+    qr_url_to_encode = f"{CURRENT_BASE_URL}/verify?military_id={military_id}&vehicle_id={v_id}"
     
     img = qrcode.make(qr_url_to_encode)
     img.save(qr_path)
 
-    # החזרת כל השדות הנדרשים לסנכרון מלא עם ה-Frontend
     return {
         "military_id": soldier["military_id"],
         "full_name": soldier["full_name"],
         "rank": soldier["rank"],
-        "unit": soldier.get("unit", "גולני"), # ערך ברירת מחדל אחיד
-        "mission_role": soldier.get("mission_role", "לוחם"), # ערך ברירת מחדל אחיד
-        "assigned_vehicle": soldier.get("assigned_vehicle_id", "לא משובץ"),
+        "unit": soldier.get("unit", "גולני"),
+        "mission_role": soldier.get("mission_role", "לוחם"),
+        "assigned_vehicle": v_id,
         "qr_url": f"/static/qrcodes/{qr_file}?v={os.path.getmtime(qr_path)}"
     }
 
@@ -194,16 +197,18 @@ async def get_soldier_profile(military_id: str):
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        # חפש את ה-style בתוך get_soldier_profile והחלף אותו בזה
         <style>
-            body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }}
-            .card {{ background: white; width: 90%; max-width: 350px; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; border-top: 8px solid #1b5e20; }}
-            .header {{ background: #1b5e20; padding: 20px; color: white; }}
-            .avatar-container {{ margin-top: -50px; position: relative; }}
-            .avatar {{ width: 100px; height: 100px; border-radius: 50%; border: 5px solid white; background: #eee; object-fit: cover; }}
+            body {{ font-family: 'Segoe UI', sans-serif; background: #f0f2f5; margin: 0; padding: 20px; direction: rtl; }}
+            .card {{ background: white; width: 100%; max-width: 350px; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; margin: 0 auto; }}
+            .header {{ background: #1b5e20; padding: 30px 20px; color: white; font-weight: bold; font-size: 20px; }}
+            /* ביטול ה-margin-top השלילי שגרם להסתרה */
+            .avatar-container {{ margin-top: 20px; position: relative; display: flex; justify-content: center; }}
+            .avatar {{ width: 100px; height: 100px; border-radius: 50%; border: 4px solid #1b5e20; background: #eee; }}
             .info {{ padding: 20px; }}
             .detail-row {{ display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee; }}
             .detail-label {{ font-weight: bold; color: #1b5e20; }}
-            .footer-status {{ background: #e8f5e9; color: #2e7d32; padding: 10px; font-weight: bold; }}
+            .footer-status {{ background: #e8f5e9; color: #2e7d32; padding: 15px; font-weight: bold; }}
         </style>
     </head>
     <body>
@@ -255,105 +260,122 @@ async def check_vehicle_page(vehicle_id: str):
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-            body {{ font-family: 'Segoe UI', sans-serif; background: #f4f6f8; margin: 0; padding: 20px; }}
-            .container {{ background: white; max-width: 500px; margin: 0 auto; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-top: 10px solid #1b5e20; }}
-            .header {{ background: #1b5e20; color: white; padding: 25px; text-align: center; }}
-            .info-bar {{ background: #e8f5e9; padding: 10px; text-align: center; font-size: 0.9rem; font-weight: bold; color: #2e7d32; border-bottom: 1px solid #c8e6c9; }}
+            body {{ font-family: 'Segoe UI', sans-serif; background: #f4f6f8; margin: 0; padding: 0; }}
+            .header {{ background: #1b5e20; color: white; padding: 30px 20px; text-align: center; }}
+            .container {{ background: white; max-width: 500px; margin: 0 auto; border-radius: 0 0 20px 20px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }}
+            .info-bar {{ background: #e8f5e9; padding: 12px; text-align: center; font-size: 0.9rem; font-weight: bold; color: #2e7d32; border-bottom: 1px solid #c8e6c9; }}
             .list-container {{ padding: 10px; }}
             .footer {{ text-align: center; padding: 20px; color: #999; font-size: 0.8rem; }}
         </style>
     </head>
     <body>
+        <div class="header">
+            <h1 style="margin: 0; font-size: 1.8rem;">שבצ"ק כלי: {vehicle_id}</h1>
+        </div>
         <div class="container">
-            <div class="header">
-                <h1 style="margin: 0; font-size: 1.8rem;">שבצ"ק כלי: {vehicle_id}</h1>
-            </div>
             <div class="info-bar">
-                תאריך שיבוץ: {current_date} | סה"כ משובצים: {len(all_soldiers)}
+                תאריך: {current_date} | לוחמים: {len(all_soldiers)}
             </div>
             <div class="list-container">
                 {soldiers_html}
             </div>
-            <div class="footer">מערכת שבזאק-נט v2.0 - ניהול חמ"ל</div>
+            <div class="footer">מערכת שבזאק-נט v2.0 - חטיבה מבצעית</div>
         </div>
     </body>
     </html>
     """
 # --- עדכון תצוגת הסריקה ב-main.py ---
-
 @app.post("/verify")
 @app.get("/verify", response_class=HTMLResponse)
 async def verify_vehicle_assignment(vehicle_id: str = None, military_id: str = None):
-    # הבאת נתונים מה-DB
     soldier = await db.soldiers.find_one({"military_id": military_id})
     import datetime
     current_date = datetime.datetime.now().strftime("%d.%m.%Y")
     
-    # עיצוב CSS תואם למדבקה ולמותג
+    # עיצוב מלוטש - סימטריה מלאה בין הכותרת לכרטיס
     style = """
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; direction: rtl; background: #f4f6f8; }
-        .card { max-width: 450px; margin: 20px auto; background: white; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2); border-top: 8px solid #1b5e20; text-align: center; }
-        .header { background: #1b5e20; color: white; padding: 20px; font-weight: bold; font-size: 24px; }
-        .content { padding: 30px; }
-        .date { color: #666; font-size: 14px; margin-bottom: 10px; font-weight: bold; }
-        .avatar { width: 120px; height: 120px; border-radius: 50%; background: #eee; margin: -60px auto 20px; border: 5px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.1); object-fit: cover; }
-        .name { font-size: 32px; font-weight: bold; margin: 10px 0; color: #333; }
-        .id { color: #888; margin-bottom: 20px; font-size: 18px; }
-        .info-row { display: flex; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid #eee; font-size: 20px; }
-        .label { color: #1b5e20; font-weight: bold; }
-        .status-box { margin-top: 25px; padding: 20px; border-radius: 15px; font-size: 24px; font-weight: bold; }
-        .approved { background: #e8f5e9; color: #2e7d32; border: 2px solid #2e7d32; }
-        .error { background: #ffebee; color: #c62828; border: 2px solid #c62828; }
-        .big-icon { font-size: 60px; margin-bottom: 10px; }
+        body { 
+            margin: 0; padding: 0; direction: rtl; 
+            background-color: #f4f6f8; font-family: 'Segoe UI', sans-serif;
+            display: flex; justify-content: center; align-items: flex-start;
+            min-height: 100vh; padding-top: 20px;
+        }
+        .card { 
+            background: white; width: 92%; max-width: 400px; 
+            border-radius: 25px; overflow: hidden; /* חותך את הכותרת לפי פינות הכרטיס */
+            box-shadow: 0 12px 30px rgba(0,0,0,0.15); 
+            text-align: center;
+        }
+        .header { 
+            background: #1b5e20; color: white; 
+            padding: 25px 15px; 
+            border-bottom: 5px solid #144316;
+        }
+        .content { padding: 25px; }
+        .avatar-circle { 
+            width: 85px; height: 85px; background: #f1f8e9; 
+            border: 3px solid #1b5e20; border-radius: 50%; 
+            margin: 0 auto 15px; display: flex; align-items: center; 
+            justify-content: center; font-size: 38px; font-weight: bold; color: #1b5e20;
+        }
+        .info-table { width: 100%; border-spacing: 0; margin-top: 15px; }
+        .info-table td { padding: 12px 5px; border-bottom: 1px solid #eee; font-size: 19px; }
+        .label { color: #1b5e20; font-weight: bold; text-align: right; }
+        .val { text-align: left; }
+        .status-banner { 
+            margin-top: 25px; padding: 18px; border-radius: 15px; 
+            font-size: 24px; font-weight: bold; display: flex; 
+            align-items: center; justify-content: center; gap: 10px;
+        }
+        .ok { background: #e8f5e9; color: #2e7d32; border: 2px solid #2e7d32; }
+        .err { background: #ffebee; color: #c62828; border: 2px solid #c62828; }
     </style>
     """
 
     if not soldier:
-        return HTMLResponse(f"{style}<div class='card'><div class='header'>שבצ\"ק-נט: שגיאה</div><div class='content'><div class='status-box error'>🛑 חייל לא נמצא במערכת</div></div></div>")
+        return HTMLResponse(f"<html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>{style}</head><body>"
+                            f"<div class='card'><div class='header'><h1 style='margin:0;'>שגיאה</h1></div>"
+                            f"<div class='content'><div class='status-banner err'>🛑 חייל לא נמצא</div></div></div></body></html>")
 
-    # בדיקה אם החייל משובץ לכלי הנכון
     is_correct = soldier.get('assigned_vehicle_id') == vehicle_id
-    status_class = "approved" if is_correct else "error"
+    status_cls = "ok" if is_correct else "err"
     status_icon = "✅" if is_correct else "🛑"
-    status_text = "מאושר לשיבוץ" if is_correct else f"טעות בכלי! רשום ל: {soldier.get('assigned_vehicle_id')}"
+    status_txt = "מאושר לשיבוץ" if is_correct else f"טעות! רשום ל: {soldier.get('assigned_vehicle_id')}"
 
-    html_content = f"""
+    return HTMLResponse(content=f"""
     <html>
-        <head>{style}</head>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+            {style}
+        </head>
         <body>
             <div class="card">
-                <div class="header">שבצ"ק-נט: כרטיס לוחם</div>
+                <div class="header">
+                    <h1 style="margin:0; font-size: 24px;">שבצ"ק-נט: כרטיס לוחם</h1>
+                </div>
+                
                 <div class="content">
-                    <div class="date">תאריך סריקה: {current_date}</div>
-                    <div style="height: 60px;"></div> <div class="avatar" style="line-height: 120px; font-size: 50px; color: #1b5e20;">{soldier['full_name'][0]}</div>
+                    <div class="avatar-circle">{soldier['full_name'][0]}</div>
+                    <h2 style="margin:0; color:#333; font-size: 28px;">{soldier['rank']} {soldier['full_name']}</h2>
+                    <div style="color:#666; margin-bottom:15px; font-size: 16px;">מ"א: {soldier['military_id']}</div>
                     
-                    <div class="name">{soldier['rank']} {soldier['full_name']}</div>
-                    <div class="id">מספר אישי: {soldier['military_id']}</div>
-                    
-                    <div class="info-row">
-                        <span class="label">📦 יחידה:</span>
-                        <span>{soldier.get('unit', 'גולני')}</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="label">🎖️ תפקיד:</span>
-                        <span>{soldier.get('mission_role', 'לוחם')}</span>
-                    </div>
-                    <div class="info-row">
-                        <span class="label">🚜 כלי יעד:</span>
-                        <span style="font-weight:bold;">{vehicle_id}</span>
-                    </div>
+                    <table class="info-table">
+                        <tr><td class="label">📦 יחידה:</td><td class="val">{soldier.get('unit', 'גולני')}</td></tr>
+                        <tr><td class="label">🎖️ תפקיד:</td><td class="val">{soldier.get('mission_role', 'לוחם')}</td></tr>
+                        <tr><td class="label">🚜 כלי יעד:</td><td class="val" style="font-weight:bold; color:#1b5e20;">{vehicle_id}</td></tr>
+                    </table>
 
-                    <div class="status-box {status_class}">
-                        <div class="big-icon">{status_icon}</div>
-                        {status_text}
+                    <div class="status-banner {status_cls}">
+                        <span>{status_icon}</span> {status_txt}
                     </div>
+                    <div style="margin-top:20px; font-size:14px; color:#999; font-weight: bold;">תאריך: {current_date}</div>
                 </div>
             </div>
         </body>
     </html>
-    """
-    return HTMLResponse(content=html_content)
+    """)
 # --- 5. ניהול QR לרכבים (למפקד) ---
 
 @app.post("/admin/vehicle-qr/{vehicle_id}")
