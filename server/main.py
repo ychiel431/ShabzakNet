@@ -2,6 +2,7 @@ import os
 import qrcode
 import codecs
 import csv
+import datetime
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,12 +10,13 @@ from pydantic import BaseModel
 from typing import Optional
 from fastapi.responses import HTMLResponse
 
-# ייבוא התשתית מהקובץ החדש - מוודא סנכרון מלא עם ה-IP וה-DB
+# ייבוא התשתית מהקובץ database.py
+# וודא ש-database.py מעודכן עם ה-IP הנכון!
 from database import db, db_sync, SERVER_IP, CURRENT_BASE_URL, STATIC_DIR, QR_DIR, PHOTO_DIR
 
 app = FastAPI()
 
-# הגדרות CORS - מאפשר ל-Frontend לתקשר עם השרת
+# הגדרות CORS - קריטי לתקשורת תקינה
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,41 +25,64 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# הגשת קבצים סטטיים (תמונות ו-QR)
+# הגשת קבצים סטטיים
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-# --- מודלים ---
+# --- מודלים (החזרתי את המודל המקורי) ---
 class PreAssignedSoldier(BaseModel):
     military_id: str
     full_name: str
     rank: str
     unit: str
     assigned_vehicle_id: str
+    photo_url: Optional[str] = None
     mission_role: Optional[str] = "לוחם"
 
-# --- 1. Dashboard (ניהול רכבים וצוותים) ---
+# --- פונקציית עזר לסידור כתובות תמונה (התיקון החדש) ---
+# מונעת כפילות של http://.../http://...
+def fix_photo_url(url_path):
+    if not url_path:
+        return ""
+    # אם הכתובת כבר מלאה (מתחילה ב-http), לא ניגע בה
+    if url_path.startswith("http"):
+        return url_path
+    # אחרת, נוסיף לה את הכתובת של השרת
+    return f"{CURRENT_BASE_URL}{url_path}"
 
+
+# --- 1. Dashboard (ניהול רכבים וצוותים) ---
 @app.get("/vehicles/list")
-def get_vehicles_with_soldiers():
+async def get_vehicles_with_soldiers():
     try:
-        # שליפת נתונים דרך החיבור הסינכרוני המרוכז ב-database.py
-        vehicles_cursor = list(db_sync.vehicles.find({}, {"_id": 0}))
-        all_soldiers = list(db_sync.soldiers.find({}, {"_id": 0}))
+        # שימוש ב-DB אסינכרוני כדי למנוע התנגשויות
+        vehicles_cursor = await db.vehicles.find({}, {"_id": 0}).to_list(length=100)
+        all_soldiers = await db.soldiers.find({}, {"_id": 0}).to_list(length=1000)
         
         vehicles_with_crew = []
         for vehicle in vehicles_cursor:
             v_data = vehicle.copy()
-            # סינון חיילים לפי הרכב המשובץ
-            crew = [s for s in all_soldiers if str(s.get("assigned_vehicle_id")).strip() == vehicle["id"]]
+            crew = []
+            for s in all_soldiers:
+                if str(s.get("assigned_vehicle_id")).strip() == vehicle["id"]:
+                    soldier_data = s.copy()
+                    
+                    # --- התיקון: שימוש בפונקציית העזר ---
+                    soldier_data["photo_url"] = fix_photo_url(s.get("photo_url"))
+                    # -----------------------------------
+                    
+                    crew.append(soldier_data)
+            
             v_data["crew"] = crew
             v_data["current_occupancy"] = len(crew)
             vehicles_with_crew.append(v_data)
+            
         return vehicles_with_crew
     except Exception as e:
+        print(f"Error in Dashboard list: {e}")
         return {"error": str(e)}
 
-# --- 2. ניהול חיילים ו-CSV ---
 
+# --- 2. ניהול חיילים ו-CSV ---
 @app.post("/admin/upload-csv")
 async def upload_soldiers_csv(file: UploadFile = File(...)):
     csv_reader = csv.DictReader(codecs.iterdecode(file.file, 'utf-8-sig'))
@@ -74,7 +99,7 @@ async def upload_soldiers_csv(file: UploadFile = File(...)):
                 "mission_role": clean_row.get("mission_role", "לוחם"),
                 "photo_url": "" 
             }
-            # עדכון ב-DB האסינכרוני
+            # עדכון ב-DB (Upsert)
             await db.soldiers.update_one(
                 {"military_id": soldier["military_id"]},
                 {"$set": soldier},
@@ -84,42 +109,40 @@ async def upload_soldiers_csv(file: UploadFile = File(...)):
     return {"status": "success", "message": f"עודכנו {count} חיילים"}
 
 
-# --- ניהול חיילים כללי (לניהול כ"א) ---
 @app.get("/admin/soldiers/list")
 async def get_all_soldiers():
     try:
         soldiers = await db.soldiers.find({}, {"_id": 0}).to_list(length=1000)
+        for s in soldiers:
+            # --- התיקון: תיקון הנתיב לרשימת הניהול ---
+            s["photo_url"] = fix_photo_url(s.get("photo_url"))
+            # -----------------------------------------
         return soldiers
     except Exception as e:
         return {"error": str(e)}
-    
-# --- לוגיקת שיבוץ לוחמים (הוספה/הסרה) ---
+
+
 @app.post("/admin/assign-soldier")
-async def assign_soldier(
-    military_id: str = Form(...), 
-    vehicle_id: str = Form(...), 
-    override: bool = Form(False) # פרמטר חדש: האם לדרוס?
-):
+async def assign_soldier(military_id: str = Form(...), vehicle_id: str = Form(...), override: bool = Form(False)):
     soldier = await db.soldiers.find_one({"military_id": military_id})
     if not soldier:
         raise HTTPException(status_code=404, detail="חייל לא נמצא במערכת")
     
     current_vehicle = soldier.get("assigned_vehicle_id", "לא משובץ")
     
-    # מנגנון בטיחות: אם החייל משובץ במקום אחר, והמפקד לא לחץ "אישור" לדריסה
+    # בדיקת דריסה
     if current_vehicle != "לא משובץ" and current_vehicle != vehicle_id and not override:
-        # מחזירים קוד שגיאה 409 (Conflict) עם פרטי השיבוץ הנוכחי
         raise HTTPException(
             status_code=409, 
             detail=f"שים לב! החייל כבר משובץ ב-{current_vehicle}"
         )
     
-    # ביצוע השיבוץ (עדכון)
     await db.soldiers.update_one(
         {"military_id": military_id},
         {"$set": {"assigned_vehicle_id": vehicle_id}}
     )
     return {"status": "success", "message": f"חייל {military_id} שובץ לכלי {vehicle_id}"}
+
 
 @app.post("/admin/unassign-soldier")
 async def unassign_soldier(military_id: str = Form(...)):
@@ -127,36 +150,59 @@ async def unassign_soldier(military_id: str = Form(...)):
         {"military_id": military_id},
         {"$set": {"assigned_vehicle_id": "לא משובץ"}}
     )
-    return {"status": "success", "message": "השיבוץ בוטל"}    
-
-# --- הפקת QR לרכב (להדבקה על הכלי) ---
-@app.get("/admin/vehicle-qr/{vehicle_id}")
-async def get_vehicle_qr_link(vehicle_id: str):
-    qr_file = f"vehicle_{vehicle_id}.png"
-    qr_path = os.path.join(QR_DIR, qr_file)
-    # הלינק מוביל לדף האימות/סטטוס של הכלי
-    qr_url_to_encode = f"{CURRENT_BASE_URL}/vehicle/check/{vehicle_id}"
-    
-    img = qrcode.make(qr_url_to_encode)
-    img.save(qr_path)
-    
-    return {"qr_url": f"/static/qrcodes/{qr_file}?v={os.path.getmtime(qr_path)}"}
+    return {"status": "success", "message": "השיבוץ בוטל"}
 
 
+# --- העלאת תמונה (התיקון החשוב: שמירה יחסית) ---
 @app.post("/admin/upload-photo/{military_id}")
 async def upload_photo(military_id: str, file: UploadFile = File(...)):
-    ext = os.path.splitext(file.filename)[1]
-    file_name = f"{military_id}{ext}"
+    extension = os.path.splitext(file.filename)[1] or ".png"
+    file_name = f"{military_id}{extension}"
     file_path = os.path.join(PHOTO_DIR, file_name)
+    
     with open(file_path, "wb") as buffer:
         buffer.write(await file.read())
-    photo_url = f"/static/photos/{file_name}"
-    await db.soldiers.update_one({"military_id": military_id}, {"$set": {"photo_url": photo_url}})
-    return {"status": "success", "photo_url": photo_url}
+    
+    # --- התיקון: שמירת נתיב יחסי "נקי" ב-DB ---
+    # זה מאפשר לנו לשנות IP בעתיד בלי לשבור את המערכת
+    photo_url_path = f"/static/photos/{file_name}"
+    
+    await db.soldiers.update_one(
+        {"military_id": military_id}, 
+        {"$set": {"photo_url": photo_url_path}}
+    )
+    
+    # החזרת URL מלא ל-Frontend רק לתצוגה המיידית
+    return {
+        "status": "success", 
+        "photo_url": f"{CURRENT_BASE_URL}{photo_url_path}"
+    }
 
 
-# --- 3. מערכת הקיוסק (זיהוי חייל והפקת QR) ---
-# חפש את הפונקציה הזו ב-main.py והחלף אותה
+# --- מחיקת תמונה (כדי שהכפתור האדום יעבוד) ---
+@app.delete("/admin/delete-photo/{military_id}")
+async def delete_photo(military_id: str):
+    soldier = await db.soldiers.find_one({"military_id": military_id})
+    if not soldier:
+        raise HTTPException(status_code=404, detail="חייל לא נמצא")
+    
+    photo_url = soldier.get("photo_url")
+    if photo_url:
+        # ניקוי הנתיב למחיקה (בין אם הוא מלא ובין אם יחסי)
+        clean_name = os.path.basename(photo_url.split("?")[0])
+        path = os.path.join(PHOTO_DIR, clean_name)
+        if os.path.exists(path):
+            os.remove(path)
+    
+    await db.soldiers.update_one(
+        {"military_id": military_id},
+        {"$set": {"photo_url": ""}}
+    )
+    return {"status": "success", "message": "התמונה נמחקה"}
+
+
+# --- 3. מערכת הקיוסק והאימות ---
+
 @app.get("/kiosk/identify/{military_id}")
 async def identify_soldier(military_id: str):
     soldier = await db.soldiers.find_one({"military_id": military_id})
@@ -166,8 +212,9 @@ async def identify_soldier(military_id: str):
     qr_file = f"{military_id}.png"
     qr_path = os.path.join(QR_DIR, qr_file)
     
-    # התיקון: הלינק עכשיו מפנה ל-verify. כך הטלפון יפתח את העיצוב החדש והתקין.
     v_id = soldier.get("assigned_vehicle_id", "לא משובץ")
+    
+    # יצירת הלינק לסריקה
     qr_url_to_encode = f"{CURRENT_BASE_URL}/verify?military_id={military_id}&vehicle_id={v_id}"
     
     img = qrcode.make(qr_url_to_encode)
@@ -183,28 +230,29 @@ async def identify_soldier(military_id: str):
         "qr_url": f"/static/qrcodes/{qr_file}?v={os.path.getmtime(qr_path)}"
     }
 
+# --- הפונקציה שהייתה חסרה! דף פרופיל אישי ---
 @app.get("/soldiers/profile/{military_id}", response_class=HTMLResponse)
 async def get_soldier_profile(military_id: str):
     soldier = await db.soldiers.find_one({"military_id": military_id})
     if not soldier: 
         return "<h1 style='text-align:center; padding-top:50px;'>❌ חייל לא נמצא במערכת</h1>"
     
-    photo_url = soldier.get('photo_url')
-    full_photo_url = f"http://{SERVER_IP}:8080{photo_url}" if photo_url else "https://cdn-icons-png.flaticon.com/512/6142/6142226.png"
+    # שימוש בתיקון ה-URL
+    full_photo_url = fix_photo_url(soldier.get('photo_url'))
+    if not full_photo_url:
+        full_photo_url = "https://cdn-icons-png.flaticon.com/512/6142/6142226.png"
 
     return f"""
     <html dir="rtl">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        # חפש את ה-style בתוך get_soldier_profile והחלף אותו בזה
         <style>
             body {{ font-family: 'Segoe UI', sans-serif; background: #f0f2f5; margin: 0; padding: 20px; direction: rtl; }}
             .card {{ background: white; width: 100%; max-width: 350px; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; margin: 0 auto; }}
             .header {{ background: #1b5e20; padding: 30px 20px; color: white; font-weight: bold; font-size: 20px; }}
-            /* ביטול ה-margin-top השלילי שגרם להסתרה */
             .avatar-container {{ margin-top: 20px; position: relative; display: flex; justify-content: center; }}
-            .avatar {{ width: 100px; height: 100px; border-radius: 50%; border: 4px solid #1b5e20; background: #eee; }}
+            .avatar {{ width: 100px; height: 100px; border-radius: 50%; border: 4px solid #1b5e20; background: #eee; object-fit: cover; }}
             .info {{ padding: 20px; }}
             .detail-row {{ display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee; }}
             .detail-label {{ font-weight: bold; color: #1b5e20; }}
@@ -228,12 +276,12 @@ async def get_soldier_profile(military_id: str):
     </html>
     """
 
-# --- 4. מערכת אימות סריקת רכב (הדפים הירוקים) ---
+# --- 4. מערכת אימות סריקת רכב (הדפים הירוקים) - החזרתי את העיצוב המלא! ---
 @app.get("/vehicle/check/{vehicle_id}", response_class=HTMLResponse)
 async def check_vehicle_page(vehicle_id: str):
-    # שליפת נתוני הכלי והחיילים המשובצים אליו
-    all_soldiers = list(db_sync.soldiers.find({"assigned_vehicle_id": vehicle_id}, {"_id": 0}))
-    current_date = "19.1.2026" # תאריך מעודכן
+    # שליפת נתוני הכלי והחיילים המשובצים אליו (סינכרוני או אסינכרוני - עדיף אסינכרוני פה)
+    all_soldiers = await db.soldiers.find({"assigned_vehicle_id": vehicle_id}, {"_id": 0}).to_list(length=100)
+    current_date = datetime.datetime.now().strftime("%d.%m.%Y")
 
     # יצירת רשימת החיילים ב-HTML עם עיצוב אלגנטי
     soldiers_html = ""
@@ -284,15 +332,27 @@ async def check_vehicle_page(vehicle_id: str):
     </body>
     </html>
     """
-# --- עדכון תצוגת הסריקה ב-main.py ---
-@app.post("/verify")
+
+# --- 5. Verify (כרטיס לוחם לסריקה) ---
 @app.get("/verify", response_class=HTMLResponse)
 async def verify_vehicle_assignment(vehicle_id: str = None, military_id: str = None):
     soldier = await db.soldiers.find_one({"military_id": military_id})
-    import datetime
+    if not soldier:
+        return HTMLResponse("חייל לא נמצא")
+    
     current_date = datetime.datetime.now().strftime("%d.%m.%Y")
     
-    # עיצוב מלוטש - סימטריה מלאה בין הכותרת לכרטיס
+    # --- טיפול בתמונה כולל Timestamp ו-URL Fix ---
+    raw_photo = soldier.get('photo_url')
+    if raw_photo:
+        # תיקון כתובת + הוספת זמן למניעת Cache בטלפון
+        full_photo_url = f"{fix_photo_url(raw_photo)}?t={datetime.datetime.now().timestamp()}"
+        avatar_content = f'<img src="{full_photo_url}" style="width: 100%; height: 100%; object-fit: cover;">'
+        extra_avatar_style = "background: transparent; border: 4px solid #1b5e20;"
+    else:
+        avatar_content = soldier['full_name'][0]
+        extra_avatar_style = "background: #f1f8e9; border: 3px solid #1b5e20; color: #1b5e20;"
+
     style = """
     <style>
         body { 
@@ -303,7 +363,7 @@ async def verify_vehicle_assignment(vehicle_id: str = None, military_id: str = N
         }
         .card { 
             background: white; width: 92%; max-width: 400px; 
-            border-radius: 25px; overflow: hidden; /* חותך את הכותרת לפי פינות הכרטיס */
+            border-radius: 25px; overflow: hidden;
             box-shadow: 0 12px 30px rgba(0,0,0,0.15); 
             text-align: center;
         }
@@ -313,12 +373,15 @@ async def verify_vehicle_assignment(vehicle_id: str = None, military_id: str = N
             border-bottom: 5px solid #144316;
         }
         .content { padding: 25px; }
+        
         .avatar-circle { 
-            width: 85px; height: 85px; background: #f1f8e9; 
-            border: 3px solid #1b5e20; border-radius: 50%; 
+            width: 110px; height: 110px; 
             margin: 0 auto 15px; display: flex; align-items: center; 
-            justify-content: center; font-size: 38px; font-weight: bold; color: #1b5e20;
+            justify-content: center; font-size: 45px; font-weight: bold;
+            border-radius: 50%;
+            overflow: hidden; 
         }
+        
         .info-table { width: 100%; border-spacing: 0; margin-top: 15px; }
         .info-table td { padding: 12px 5px; border-bottom: 1px solid #eee; font-size: 19px; }
         .label { color: #1b5e20; font-weight: bold; text-align: right; }
@@ -357,7 +420,10 @@ async def verify_vehicle_assignment(vehicle_id: str = None, military_id: str = N
                 </div>
                 
                 <div class="content">
-                    <div class="avatar-circle">{soldier['full_name'][0]}</div>
+                    <div class="avatar-circle" style="{extra_avatar_style}">
+                        {avatar_content}
+                    </div>
+                    
                     <h2 style="margin:0; color:#333; font-size: 28px;">{soldier['rank']} {soldier['full_name']}</h2>
                     <div style="color:#666; margin-bottom:15px; font-size: 16px;">מ"א: {soldier['military_id']}</div>
                     
@@ -376,8 +442,8 @@ async def verify_vehicle_assignment(vehicle_id: str = None, military_id: str = N
         </body>
     </html>
     """)
-# --- 5. ניהול QR לרכבים (למפקד) ---
 
+# --- 6. יצירת QR לרכבים ---
 @app.post("/admin/vehicle-qr/{vehicle_id}")
 async def generate_vehicle_qr(vehicle_id: str):
     verify_link = f"{CURRENT_BASE_URL}/vehicle/check/{vehicle_id}"
@@ -386,6 +452,8 @@ async def generate_vehicle_qr(vehicle_id: str):
     qr_img.save(os.path.join(QR_DIR, file_name))
     return {"status": "created", "qr_url": f"/static/qrcodes/{file_name}", "link": verify_link}
 
+
 if __name__ == "__main__":
     import uvicorn
+    # הפעלה על כל הממשקים כדי לאפשר גישה מהטלפון
     uvicorn.run(app, host="0.0.0.0", port=8080)
