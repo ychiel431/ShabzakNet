@@ -4,7 +4,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import MongoClient
 
 # --- ניהול כתובת השרת ---
-SERVER_IP = "10.91.81.124"
+SERVER_IP = "172.29.234.124"
 PORT = 8080
 CURRENT_BASE_URL = f"http://{SERVER_IP}:{PORT}"
 
@@ -19,7 +19,7 @@ for d in [QR_DIR, PHOTO_DIR]:
     os.makedirs(d, exist_ok=True)
 
 # --- חיבור למסד הנתונים ---
-MONGO_URI = "mongodb://127.0.0.1:27017"
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017") #
 client_async = AsyncIOMotorClient(MONGO_URI)
 db = client_async.shabzak_db 
 

@@ -3,21 +3,34 @@ version: '3.8'
 services:
   # מסד הנתונים - MongoDB
   mongo:
-    image: mongo
+    image: mongo:latest
     restart: always
     ports:
       - 27017:27017
     volumes:
       - mongo-data:/data/db
 
-  # ממשק גרפי לראות את הנתונים בדפדפן (כמו אקסל)
-  mongo-express:
-    image: mongo-express
+  # שרת ה-Backend (FastAPI)
+  backend:
+    build: ./server
     restart: always
     ports:
-      - 8081:8081
+      - 8080:8080
     environment:
-      ME_CONFIG_MONGODB_SERVER: mongo
+      - MONGO_URI=mongodb://mongo:27017
+    depends_on:
+      - mongo
+    volumes:
+      - ./backend/static:/app/static # שמירת תמונות ו-QR קודים מחוץ לקונטיינר
+
+  # שרת ה-Frontend (React)
+  frontend:
+    build: ./client
+    restart: always
+    ports:
+      - 80:80 # חשיפה לאינטרנט בפורט סטנדרטי
+    depends_on:
+      - backend
 
 volumes:
   mongo-data:

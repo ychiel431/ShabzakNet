@@ -12,12 +12,26 @@ export const api = {
     return res.json();
   },
 
+  resetVehicle: async (vehicleId) => {
+    const response = await fetch(`${API_BASE_URL}/vehicles/${vehicleId}/reset`, {
+      method: 'POST',
+    });
+    return response.json();
+  },
+
   // קבלת רשימת הלוחמים המלאה
   // התיקון הקריטי: הוספת timestamp מונעת מהדפדפן לשמור גרסה ישנה ללא התמונות
   fetchSoldiers: async () => {
     const res = await fetch(`${API_BASE_URL}/admin/soldiers/list?t=${new Date().getTime()}`);
     if (!res.ok) throw new Error('Failed to fetch soldiers');
     return res.json();
+  },
+
+  resetAllVerifications: async () => {
+    const response = await fetch(`${API_BASE_URL}/admin/reset-all-verifications`, {
+      method: 'POST',
+    });
+    return response.json();
   },
 
   // שיבוץ לוחם לכלי (כולל תמיכה ב-Override במקרה של כפל שיבוץ)
@@ -73,5 +87,18 @@ export const api = {
         method: 'DELETE',
     });
     return response.json();
-  }
+  },
+
+  uploadSoldiersCsv: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const res = await fetch(`${API_BASE_URL}/admin/upload-csv`, {
+      method: 'POST',
+      body: formData
+    });
+    
+    if (!res.ok) throw new Error('CSV upload failed');
+    return res.json();
+  },
 };

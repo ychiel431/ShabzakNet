@@ -494,6 +494,48 @@ async def generate_vehicle_qr(vehicle_id: str):
         "isVehicle": True
     }
 
+@app.post("/vehicles/{vehicle_id}/reset")
+async def reset_vehicle_verification(vehicle_id: str):
+    """
+    מאפס את סטטוס האימות (V ירוק) לכל הלוחמים ברכב ספציפי ב-MongoDB.
+    """
+    try:
+        # עדכון כל החיילים שמשובצים לרכב הספציפי
+        result = await db.soldiers.update_many(
+            {"assigned_vehicle_id": vehicle_id},
+            {"$set": {
+                "is_finalized": False,
+                "finalized_at": None
+            }}
+        )
+        
+        return {
+            "status": "success", 
+            "message": f"Reset {result.modified_count} soldiers", 
+            "reset_count": result.modified_count
+        }
+    except Exception as e:
+        print(f"Error resetting vehicle: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+
+@app.post("/admin/reset-all-verifications")
+async def reset_all_soldiers_verification():
+    """
+    מאפס את ה-V הירוק לכל הלוחמים במערכת (לכל הכלים).
+    """
+    try:
+        result = await db.soldiers.update_many(
+            {}, # ללא פילטר - תופס את כולם
+            {"$set": {
+                "is_finalized": False,
+                "finalized_at": None
+            }}
+        )
+        return {"status": "success", "reset_count": result.modified_count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))    
 
 if __name__ == "__main__":
     import uvicorn
