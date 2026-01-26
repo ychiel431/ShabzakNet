@@ -6,7 +6,7 @@ from pymongo import MongoClient
 # --- ניהול כתובת השרת ---
 SERVER_IP = "172.29.234.124"
 PORT = 8080
-CURRENT_BASE_URL = f"http://{SERVER_IP}:{PORT}"
+CURRENT_BASE_URL = os.getenv("BASE_URL", "http://172.29.234.124:8080")
 
 # --- הגדרות נתיבים (זה מה שהיה חסר!) ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
