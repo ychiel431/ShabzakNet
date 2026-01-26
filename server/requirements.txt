@@ -5,3 +5,4 @@ pymongo
 python-multipart
 qrcode
 pandas
+Pillow>=10.0.0
