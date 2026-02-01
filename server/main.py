@@ -264,7 +264,7 @@ async def identify_soldier(military_id: str):
     v_id = soldier.get("assigned_vehicle_id", "לא משובץ")
     
     # --- השינוי המבצעי: הלינק מכיל רק מ"א כדי שה-QR לא ישתנה לעולם ---
-    qr_url_to_encode = f"{CURRENT_BASE_URL}/verify?military_id={military_id}"
+    qr_url_to_encode = f"{CURRENT_BASE_URL}/kiosk/identify/{military_id}"
     # ------------------------------------------------------------------
     
     img = qrcode.make(qr_url_to_encode)
