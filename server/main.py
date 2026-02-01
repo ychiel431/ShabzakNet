@@ -88,6 +88,12 @@ async def get_vehicles_with_soldiers():
 @app.post("/admin/upload-csv")
 async def upload_soldiers_csv(file: UploadFile = File(...)):
     try:
+
+        await db.soldiers.delete_many({})
+        await db.vehicles.delete_many({})
+        
+        content = await file.read()
+        
         # קריאת תוכן הקובץ ופיענוח עברית (utf-8-sig)
         content = await file.read()
         decoded = content.decode('utf-8-sig')
@@ -533,6 +539,19 @@ async def generate_vehicle_qr(vehicle_id: str):
         "link": verify_link,
         "isVehicle": True
     }
+
+
+@app.post("/admin/clear-database")
+async def clear_database():
+    """
+    מוחק את כל החיילים והרכבים מהמערכת - לשימוש לפני טעינה מחדש
+    """
+    try:
+        await db.soldiers.delete_many({})
+        await db.vehicles.delete_many({})
+        return {"status": "success", "message": "הנתונים נמחקו בהצלחה"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/vehicles/{vehicle_id}/reset")
 async def reset_vehicle_verification(vehicle_id: str):
