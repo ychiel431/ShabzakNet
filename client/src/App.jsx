@@ -199,7 +199,7 @@ function App() {
 
         {view === 'menu' && (
           <Container maxWidth="xl" sx={{ mt: 8, textAlign: 'center' }}>
-            <Typography variant="h1" sx={{ color: 'primary.main', mb: 8, fontSize: '4rem', fontWeight: 'bold' }}>חמ"ל שבצ"ק-נט</Typography>
+            <Typography variant="h1" sx={{ color: 'primary.main', mb: { xs: 4, md: 8 }, fontSize: { xs: '2.5rem', md: '4rem' }, fontWeight: 'bold' }}>חמ"ל שבצ"ק-נט</Typography>
             <Grid container spacing={4} justifyContent="center">
               {[
                 { label: 'תמונת מצב', icon: <DashboardIcon fontSize="large"/>, v: 'dashboard', color: '#fbc02d' },
@@ -237,7 +237,7 @@ function App() {
         )}
 
         {/* דיאלוג רכב */}
-        <Dialog open={openVehicleDialog} onClose={() => setOpenVehicleDialog(false)} fullWidth maxWidth="sm">
+        <Dialog open={openVehicleDialog} onClose={() => setOpenVehicleDialog(false)} fullScreen={window.innerWidth < 600} fullWidth maxWidth="sm">
           {selectedVehicle && (
             <>
               <DialogTitle sx={{ bgcolor: '#1b5e20', color: 'white', p: 2 }}>
@@ -287,7 +287,7 @@ function App() {
         </Dialog>
 
         {/* דיאלוג חייל */}
-        <Dialog open={openSoldierDialog} onClose={() => setOpenSoldierDialog(false)} fullWidth maxWidth="xs" PaperProps={{ sx: { borderRadius: 5, overflow: 'hidden' } }}>
+        <Dialog open={openSoldierDialog} onClose={() => setOpenSoldierDialog(false)} fullScreen={window.innerWidth < 600} fullWidth maxWidth="xs" PaperProps={{ sx: { borderRadius: 5, overflow: 'hidden' } }}>
           {selectedSoldier && (
             <Box sx={{ direction: 'rtl', bgcolor: 'white' }}>
               <Box sx={{ bgcolor: '#1b5e20', py: 2, px: 3, color: 'white', textAlign: 'center' }}>

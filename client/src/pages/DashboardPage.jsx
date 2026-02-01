@@ -1,6 +1,6 @@
 import React from 'react';
 import { 
-  Container, Grid, Typography, Box, Paper, Button, LinearProgress, CircularProgress 
+  Container, Grid, Typography, Box, Paper, Button, LinearProgress, CircularProgress, useMediaQuery, useTheme 
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
@@ -8,43 +8,50 @@ import DirectionsBusIcon from '@mui/icons-material/DirectionsBus';
 import AgricultureIcon from '@mui/icons-material/Agriculture';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 
-// הגדרת הקטגוריות עם אייקונים מתאימים
 const CATEGORIES = [
-  { id: 'HUMMER', name: 'האמר', color: '#4caf50', icon: <DirectionsCarIcon /> }, // ירוק בהיר
-  { id: 'MERKAVA', name: 'מרכבה', color: '#2e7d32', icon: <AgricultureIcon /> }, // ירוק כהה
-  { id: 'NAMER', name: 'נמר', color: '#ff9800', icon: <LocalShippingIcon /> },   // כתום (בולט)
-  { id: 'ZEEV', name: 'זאב', color: '#0288d1', icon: <DirectionsBusIcon /> }      // כחול
+  { id: 'HUMMER', name: 'האמר', color: '#4caf50', icon: <DirectionsCarIcon /> },
+  { id: 'MERKAVA', name: 'מרכבה', color: '#2e7d32', icon: <AgricultureIcon /> },
+  { id: 'NAMER', name: 'נמר', color: '#ff9800', icon: <LocalShippingIcon /> },
+  { id: 'ZEEV', name: 'זאב', color: '#0288d1', icon: <DirectionsBusIcon /> }
 ];
 
 const DashboardPage = ({ stats, vehicles, setView , setSelectedCategory }) => {
-  
-  // פונקציית עזר לחישוב אחוז בטוח (מונעת NaN)
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm')); // זיהוי אם אנחנו במובייל (כמו הפוקו)
+
   const safePercent = (part, total) => {
     if (!total || total === 0) return 0;
     const p = Math.round((part / total) * 100);
     return p > 100 ? 100 : p;
   };
 
-  // פונקציית עזר למעבר לניהול כלים
   const handleCategoryClick = (categoryId) => {
-    setSelectedCategory(categoryId); // בוחר את הקטגוריה (למשל NAMER)
-    setView('fleet'); // מעביר למסך הצי
+    setSelectedCategory(categoryId);
+    setView('fleet');
   };
 
   return (
-    <Container maxWidth="xl" sx={{ mt: 4, px: 3, pb: 8, direction: 'rtl' }}>
+    <Container maxWidth="xl" sx={{ mt: isMobile ? 2 : 4, px: isMobile ? 1 : 3, pb: 8, direction: 'rtl' }}>
       
-      {/* כותרת וכפתור חזרה */}
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 6, justifyContent: 'space-between' }}>
+      {/* כותרת מותאמת למובייל */}
+      <Box sx={{ 
+        display: 'flex', 
+        flexDirection: isMobile ? 'column' : 'row', 
+        alignItems: isMobile ? 'flex-start' : 'center', 
+        mb: isMobile ? 3 : 6, 
+        justifyContent: 'space-between',
+        gap: 2
+      }}>
         <Box>
-          <Typography variant="h3" sx={{ fontWeight: '800', color: '#1a237e', mb: 1 }}>
+          <Typography variant={isMobile ? "h4" : "h3"} sx={{ fontWeight: '800', color: '#1a237e', mb: 0.5 }}>
             📊 תמונת מצב גדודית
           </Typography>
-          <Typography variant="subtitle1" sx={{ color: '#666' }}>
+          <Typography variant="subtitle2" sx={{ color: '#666' }}>
             סיכום כשירות מבצעית בזמן אמת
           </Typography>
         </Box>
         <Button 
+          fullWidth={isMobile}
           startIcon={<ArrowBackIcon />} 
           onClick={() => setView('menu')} 
           variant="outlined" 
@@ -54,18 +61,18 @@ const DashboardPage = ({ stats, vehicles, setView , setSelectedCategory }) => {
         </Button>
       </Box>
 
-      <Grid container spacing={4}>
+      <Grid container spacing={isMobile ? 2 : 4}>
         
-        {/* כרטיס ראשי - כשירות כללית */}
+        {/* כרטיס ראשי - כשירות כללית (תופס שורה שלמה במובייל) */}
         <Grid item xs={12} md={4}>
           <Paper 
             elevation={6} 
             sx={{ 
-              p: 4, 
+              p: isMobile ? 3 : 4, 
               background: 'linear-gradient(135deg, #1b5e20 0%, #43a047 100%)', 
               color: 'white', 
               borderRadius: 6, 
-              height: '100%', 
+              minHeight: isMobile ? '180px' : '100%', 
               display: 'flex', 
               flexDirection: 'column', 
               justifyContent: 'center',
@@ -73,30 +80,25 @@ const DashboardPage = ({ stats, vehicles, setView , setSelectedCategory }) => {
               overflow: 'hidden'
             }}
           >
-            {/* אלמנט קישוטי ברקע */}
-            <Box sx={{ position: 'absolute', top: -20, right: -20, opacity: 0.1 }}>
-              <AgricultureIcon sx={{ fontSize: 180 }} />
+            <Box sx={{ position: 'absolute', top: -10, right: -10, opacity: 0.1 }}>
+              <AgricultureIcon sx={{ fontSize: isMobile ? 120 : 180 }} />
             </Box>
 
-            <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 1, opacity: 0.9 }}>כשירות מבצעית</Typography>
-            <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1, mb: 2 }}>
-              <Typography variant="h1" sx={{ fontWeight: '900', lineHeight: 1 }}>
+            <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1, opacity: 0.9 }}>כשירות מבצעית</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1, mb: 1 }}>
+              <Typography variant={isMobile ? "h2" : "h1"} sx={{ fontWeight: '900', lineHeight: 1 }}>
                 {stats.readiness}%
               </Typography>
-              <Typography variant="h6" sx={{ mb: 1, opacity: 0.8 }}>מוכנות</Typography>
+              <Typography variant="body1" sx={{ mb: 1, opacity: 0.8 }}>מוכנות</Typography>
             </Box>
             
-            <Box sx={{ mt: 'auto' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, fontSize: '0.9rem' }}>
-                <span>התקדמות</span>
-                <span>{stats.readiness}/100</span>
-              </Box>
+            <Box sx={{ mt: 2 }}>
               <LinearProgress 
                 variant="determinate" 
                 value={stats.readiness} 
                 sx={{ 
-                  height: 10, 
-                  borderRadius: 5, 
+                  height: 12, 
+                  borderRadius: 6, 
                   bgcolor: 'rgba(255,255,255,0.2)', 
                   '& .MuiLinearProgress-bar': { bgcolor: '#76ff03' } 
                 }} 
@@ -107,21 +109,12 @@ const DashboardPage = ({ stats, vehicles, setView , setSelectedCategory }) => {
 
         {/* גריד הכרטיסים הקטנים */}
         <Grid item xs={12} md={8}>
-          <Grid container spacing={3}>
+          <Grid container spacing={isMobile ? 2 : 3}>
             {CATEGORIES.map(cat => {
-              // --- לוגיקה מתוקנת לכל כלי ---
               const typeVehicles = vehicles.filter(v => v.id.startsWith(cat.id));
               const totalType = typeVehicles.length;
-
-              // סף מילוי לפי סוג רכב
-              let minToFull = 4; 
-              if (cat.id === 'NAMER') minToFull = 11;
-              if (cat.id === 'ZEEV') minToFull = 12;
-
-              // חישוב כמה מלאים
+              let minToFull = (cat.id === 'NAMER' ? 11 : (cat.id === 'ZEEV' ? 12 : 4));
               const fullType = typeVehicles.filter(v => (v.current_occupancy || 0) >= minToFull).length;
-              
-              // חישוב אחוז
               const percent = safePercent(fullType, totalType);
 
               return (
@@ -130,20 +123,17 @@ const DashboardPage = ({ stats, vehicles, setView , setSelectedCategory }) => {
                     elevation={3}
                     onClick={() => handleCategoryClick(cat.id)}
                     sx={{ 
-                      p: 3, 
+                      p: isMobile ? 2 : 3, 
                       borderRadius: 5, 
                       transition: 'transform 0.2s',
                       cursor: 'pointer',
                       '&:hover': { transform: 'translateY(-5px)', boxShadow: 6 },
-                      position: 'relative',
-                      overflow: 'hidden'
                     }}
                   >
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        {/* אייקון בתוך עיגול צבעוני */}
                         <Box sx={{ 
-                          bgcolor: `${cat.color}22`, // צבע עם שקיפות
+                          bgcolor: `${cat.color}22`,
                           color: cat.color,
                           p: 1.5,
                           borderRadius: '50%',
@@ -152,52 +142,26 @@ const DashboardPage = ({ stats, vehicles, setView , setSelectedCategory }) => {
                           {cat.icon}
                         </Box>
                         <Box>
-                          <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#333' }}>{cat.name}</Typography>
-                          <Typography variant="body2" color="text.secondary">תקן: {minToFull} לוחמים</Typography>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: '#333' }}>{cat.name}</Typography>
+                          <Typography variant="caption" color="text.secondary">תקן: {minToFull} לוחמים</Typography>
                         </Box>
                       </Box>
                       
-                      {/* מעגל אחוזים */}
                       <Box sx={{ position: 'relative', display: 'inline-flex' }}>
-                        <CircularProgress 
-                          variant="determinate" 
-                          value={100} 
-                          size={50} 
-                          thickness={4} 
-                          sx={{ color: '#eee', position: 'absolute' }} 
-                        />
-                        <CircularProgress 
-                          variant="determinate" 
-                          value={percent} 
-                          size={50} 
-                          thickness={4} 
-                          sx={{ color: percent === 100 ? '#4caf50' : (percent < 50 ? '#f44336' : cat.color) }} 
-                        />
+                        <CircularProgress variant="determinate" value={100} size={45} thickness={4} sx={{ color: '#eee', position: 'absolute' }} />
+                        <CircularProgress variant="determinate" value={percent} size={45} thickness={4} sx={{ color: percent === 100 ? '#4caf50' : (percent < 50 ? '#f44336' : cat.color) }} />
                         <Box sx={{ top: 0, left: 0, bottom: 0, right: 0, position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <Typography variant="caption" component="div" color="text.secondary" fontWeight="bold">
-                            {percent}%
-                          </Typography>
+                          <Typography variant="caption" fontWeight="bold">{percent}%</Typography>
                         </Box>
                       </Box>
                     </Box>
 
-                    {/* נתונים מספריים - כאן התיקון של הסדר */}
                     <Box sx={{ bgcolor: '#f5f5f5', p: 1.5, borderRadius: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="body2" fontWeight="bold" color="text.secondary">מצב שיבוץ:</Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
-                        
-                        <Typography variant="body1" color="text.secondary">
-                          {totalType}
-                        </Typography>
-                        <Typography variant="h5" sx={{ fontWeight: 'bold', color: percent === 100 ? '#2e7d32' : '#333' }}>
-                          / {fullType}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ml: 0.5}}>
-                          כלים
-                        </Typography>
-                      </Box>
+                      <Typography variant="caption" fontWeight="bold">מצב שיבוץ:</Typography>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                        {fullType} / {totalType} <Typography variant="caption" component="span" color="text.secondary">כלים</Typography>
+                      </Typography>
                     </Box>
-
                   </Paper>
                 </Grid>
               );

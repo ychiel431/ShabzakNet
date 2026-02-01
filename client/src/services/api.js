@@ -1,12 +1,18 @@
 // client/src/services/api.js
 
-const SERVER_IP = window.location.hostname;
-export const API_BASE_URL = `http://${SERVER_IP}:8080`;
+// זיהוי כתובת אוטומטי - עובד גם בבית וגם ב-EC2
+const getBaseUrl = () => {
+  const { protocol, hostname } = window.location;
+  // אם אנחנו מריצים לוקאלית (מחשב פיתוח), נשתמש בפורט 8080
+  // אם נריץ בעתיד עם דומיין מסודר, זה יעבוד גם שם
+  return `${protocol}//${hostname}:8080`;
+};
+
+export const API_BASE_URL = getBaseUrl();
 
 export const api = {
-  // קבלת נתוני הכלים (Fleet) - כולל חישוב הקיבולת והסטטיסטיקה
+  // קבלת נתוני הכלים
   fetchVehicles: async () => {
-    // מומלץ להוסיף גם כאן timestamp כדי לראות שינויי שיבוץ בזמן אמת
     const res = await fetch(`${API_BASE_URL}/vehicles/list?t=${new Date().getTime()}`);
     if (!res.ok) throw new Error('Failed to fetch vehicles');
     return res.json();
@@ -19,8 +25,7 @@ export const api = {
     return response.json();
   },
 
-  // קבלת רשימת הלוחמים המלאה
-  // התיקון הקריטי: הוספת timestamp מונעת מהדפדפן לשמור גרסה ישנה ללא התמונות
+  // קבלת רשימת הלוחמים
   fetchSoldiers: async () => {
     const res = await fetch(`${API_BASE_URL}/admin/soldiers/list?t=${new Date().getTime()}`);
     if (!res.ok) throw new Error('Failed to fetch soldiers');
@@ -34,7 +39,7 @@ export const api = {
     return response.json();
   },
 
-  // שיבוץ לוחם לכלי (כולל תמיכה ב-Override במקרה של כפל שיבוץ)
+  // שיבוץ לוחם (FormData - קריטי ל-Backend שלך)
   assignSoldier: async (militaryId, vehicleId, override = false) => {
     const formData = new FormData();
     formData.append('military_id', militaryId);
@@ -45,10 +50,10 @@ export const api = {
       method: 'POST',
       body: formData
     });
-    return res; // מחזירים את ה-Response כדי לטפל בסטטוס 409 (קונפליקט) ב-UI
+    return res; 
   },
 
-  // ביטול שיבוץ לוחם
+  // ביטול שיבוץ
   unassignSoldier: async (militaryId) => {
     const formData = new FormData();
     formData.append('military_id', militaryId);
@@ -60,19 +65,18 @@ export const api = {
     return res.json();
   },
 
-  // הפקת נתוני QR (לוחם או כלי)
+  // הפקת נתוני QR
   getQrData: async (type, id) => {
     const endpoint = type === 'soldier' 
       ? `${API_BASE_URL}/kiosk/identify/${id}`
       : `${API_BASE_URL}/admin/vehicle-qr/${id}`;
     
-    // גם כאן מוסיפים timestamp כדי לוודא שמקבלים תמונה עדכנית בסריקה
     const res = await fetch(`${endpoint}?t=${new Date().getTime()}`);
     if (!res.ok) throw new Error('Not found in system');
     return res.json();
   },
 
-  // פונקציה להעלאת תמונת לוחם לשרת
+  // העלאת תמונה
   uploadSoldierPhoto: async (militaryId, formData) => {
     const response = await fetch(`${API_BASE_URL}/admin/upload-photo/${militaryId}`, {
       method: 'POST',
@@ -81,7 +85,7 @@ export const api = {
     return response.json();
   },
 
-  // פונקציה למחיקת תמונת לוחם (עבור הכפתור האדום)
+  // מחיקת תמונה
   deleteSoldierPhoto: async (militaryId) => {
     const response = await fetch(`${API_BASE_URL}/admin/delete-photo/${militaryId}`, {
         method: 'DELETE',
@@ -89,6 +93,7 @@ export const api = {
     return response.json();
   },
 
+  // העלאת CSV (החזרנו את זה!)
   uploadSoldiersCsv: async (file) => {
     const formData = new FormData();
     formData.append('file', file);
