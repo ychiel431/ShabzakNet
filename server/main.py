@@ -49,6 +49,14 @@ def fix_photo_url(url_path):
     # אחרת, נוסיף לה את הכתובת של השרת
     return f"{CURRENT_BASE_URL}{url_path}"
 
+@app.get("/verify")
+async def verify_soldier_from_qr(military_id: str):
+    """
+    נתיב עזר שמאפשר ל-QR קודים הישנים והחדשים לעבוד.
+    הוא פשוט מפנה לפונקציית הזיהוי הקיימת.
+    """
+    return await identify_soldier(military_id)
+
 
 # --- 1. Dashboard (ניהול רכבים וצוותים) ---
 @app.get("/vehicles/list")
