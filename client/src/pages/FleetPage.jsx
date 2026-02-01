@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { 
-  Container, Grid, Box, Typography, Button, Paper, Card, Chip, Tooltip, LinearProgress, TextField, InputAdornment, useTheme, useMediaQuery 
+  Container, Grid, Box, Typography, Button, Paper, Card, LinearProgress, TextField, InputAdornment, useTheme, useMediaQuery 
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DirectionsBusIcon from '@mui/icons-material/DirectionsBus';
@@ -27,7 +27,7 @@ const FleetPage = ({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // --- שלב א': בחירת קטגוריה ---
+  // --- שלב א': מסך בחירת סוג כלי ---
   if (!selectedCategory) {
     return (
       <Container maxWidth={false} sx={{ mt: isMobile ? 4 : 10, px: isMobile ? 2 : 6 }}>
@@ -45,6 +45,7 @@ const FleetPage = ({
             בחר סוג כלי
           </Typography>
 
+          {/* כפתור איפוס שנשמר מהמקור */}
           <Button 
             variant="contained" 
             color="error" 
@@ -53,27 +54,31 @@ const FleetPage = ({
             fullWidth={isMobile}
             sx={{ fontWeight: 'bold', borderRadius: 3, px: 3, py: 1.5, boxShadow: 4, bgcolor: '#d32f2f', '&:hover': { bgcolor: '#b71c1c' } }}
           >
-            {isMobile ? "איפוס כללי" : "איפוס אימותים כללי"}
+            {isMobile ? "איפוס כללי" : "איפוס אימותים"}
           </Button>
         </Box>
 
-        <Grid container spacing={isMobile ? 2 : 4} justifyContent="center">
+        {/* התיקון לחפיפה: spacing=3 וגובה מינימלי */}
+        <Grid container spacing={3} justifyContent="center">
           {CATEGORIES.map(cat => (
             <Grid item xs={6} md={3} key={cat.id}>
               <Paper 
                 elevation={4} 
                 onClick={() => setSelectedCategory(cat.id)} 
                 sx={{ 
-                  p: isMobile ? 3 : 8, textAlign: 'center', borderRadius: 5, cursor: 'pointer', 
+                  p: 3, 
+                  textAlign: 'center', 
+                  borderRadius: 5, 
+                  cursor: 'pointer', 
                   borderBottom: `8px solid ${cat.color}`, 
-                  transition: '0.3s',
-                  height: '100%',
+                  minHeight: '180px', // מונע חפיפה
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  transition: '0.3s',
                   '&:hover': { transform: 'translateY(-5px)', bgcolor: '#f1f8e9' } 
                 }}
               >
-                <DirectionsBusIcon sx={{ fontSize: isMobile ? 50 : 100, color: cat.color }} />
-                <Typography variant={isMobile ? "h5" : "h3"} sx={{ mt: 1, fontWeight: 'bold' }}>{cat.name}</Typography>
+                <DirectionsBusIcon sx={{ fontSize: isMobile ? 60 : 100, color: cat.color }} />
+                <Typography variant={isMobile ? "h5" : "h3"} sx={{ mt: 2, fontWeight: 'bold' }}>{cat.name}</Typography>
               </Paper>
             </Grid>
           ))}
@@ -90,14 +95,11 @@ const FleetPage = ({
 
   return (
     <Container maxWidth={false} sx={{ mt: isMobile ? 2 : 5, px: isMobile ? 2 : 6, pb: 10 }}>
-      
-      {/* סרגל עליון מותאם - מונע התנגשויות */}
+      {/* סרגל עליון מסודר */}
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: 3 }}>
-        
-        {/* שורה 1: כפתורים */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
           <Button startIcon={<ArrowBackIcon />} onClick={() => setSelectedCategory(null)} variant="outlined" size="small">
-             חזרה
+             חזרה לקטגוריות
           </Button>
           <Button 
             startIcon={<DashboardIcon />} 
@@ -110,7 +112,6 @@ const FleetPage = ({
           </Button>
         </Box>
 
-        {/* שורה 2: כותרת וחיפוש */}
         <Box sx={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
             <Box sx={{ textAlign: isMobile ? 'center' : 'right', width: '100%' }}>
                 <Typography variant={isMobile ? "h4" : "h3"} sx={{ fontWeight: 'bold', color: '#1b5e20' }}>
@@ -125,7 +126,7 @@ const FleetPage = ({
                 <TextField
                     fullWidth
                     size="small"
-                    placeholder="חפש מספר כלי..."
+                    placeholder="חפש כלי..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     InputProps={{
@@ -137,7 +138,7 @@ const FleetPage = ({
         </Box>
       </Box>
       
-      {/* גריד כלים - xs=6 לשתי קוביות בשורה */}
+      {/* גריד כלים - 2 בשורה במובייל */}
       <Grid container spacing={2}>
         {filteredVehicles.map(v => {
             const occupancyPercent = Math.min((v.current_occupancy / v.capacity) * 100, 100);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ThemeProvider, Box, AppBar, Toolbar, Typography, Button, Dialog, 
   DialogTitle, DialogContent, DialogActions, List, ListItem, 
@@ -13,7 +13,7 @@ import BadgeIcon from '@mui/icons-material/Badge';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward'; // חץ חזרה מותאם לעברית
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward'; // חץ חזרה למובייל
 
 import { shabzakTheme } from './theme/shabzakTheme';
 import { api, API_BASE_URL } from './services/api';
@@ -26,7 +26,7 @@ function App() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // --- 1. הגדרת States (מצב) ---
+  // --- States ---
   const [view, setView] = useState('menu');
   const [vehicles, setVehicles] = useState([]);
   const [soldiersList, setSoldiersList] = useState([]);
@@ -39,8 +39,7 @@ function App() {
   const [openSoldierDialog, setOpenSoldierDialog] = useState(false);
   const [newSoldierId, setNewSoldierId] = useState('');
 
-  // --- 2. פונקציות לוגיקה ---
-
+  // --- Logic ---
   const loadData = async () => {
     try {
       const [vData, sData] = await Promise.all([api.fetchVehicles(), api.fetchSoldiers()]);
@@ -55,7 +54,6 @@ function App() {
       setSoldiersList([...sData]);
       calculateStats(enrichedVehicles, sData);
 
-      // עדכון זמן אמת לדיאלוג פתוח
       if (openVehicleDialog && selectedVehicle) {
         const updated = enrichedVehicles.find(v => v.id === selectedVehicle.id);
         if (updated) setSelectedVehicle({ ...updated });
@@ -70,23 +68,21 @@ function App() {
     setStats({ readiness, totalSoldiers: sData.length, assignedSoldiers: assigned, totalVehicles: vData.length, fullVehicles });
   };
 
-  // --- 3. פונקציות טיפול (Handlers) ---
-
+  // --- Handlers (שמרתי על כולם) ---
   const handleResetAll = async () => {
-    if (window.confirm("⚠️ איפוס כל ה-✅ במערכת?\nהשיבוצים לא יימחקו.")) {
+    if (window.confirm("⚠️ שים לב: איפוס זה ינקה את כל ה-✅ במערכת.\nהשיבוצים עצמם יישמרו.")) {
       try {
         await api.resetAllVerifications();
         await loadData(); 
-        alert("כל האימותים אופסו בהצלחה!");
-      } catch (e) { alert("שגיאה באיפוס כללי."); }
+        alert("אופס בהצלחה!");
+      } catch (e) { alert("שגיאה באיפוס."); }
     }
   };
 
   const handleOpenVehicle = (v) => { setSelectedVehicle(v); setOpenVehicleDialog(true); };
   
-  // פונקציית איפוס רכב בודד (קריטי שנשמור אותה)
   const handleResetVehicle = async () => {
-    if (window.confirm(`איפוס יומי לכלי ${selectedVehicle.id}?\nזה ינקה את ה-✅.`)) {
+    if (window.confirm(`לבצע איפוס יומי לכלי ${selectedVehicle.id}?\n(מנקה את ה-✅ לצוות זה)`)) {
       try {
         await api.resetVehicle(selectedVehicle.id);
         await loadData(); 
@@ -117,16 +113,15 @@ function App() {
     } catch (e) { alert("שגיאה בהעלאת התמונה"); }
   };
 
-  // פונקציית מחיקת תמונה (קריטי שנשמור אותה)
   const handlePhotoDelete = async () => {
-    if (!window.confirm("האם למחוק את התמונה?")) return;
+    if (!window.confirm("האם למחוק את התמונה של הלוחם?")) return;
     try {
         if(api.deleteSoldierPhoto) {
             await api.deleteSoldierPhoto(selectedSoldier.military_id);
             alert("התמונה נמחקה");
             setOpenSoldierDialog(false);
             loadData();
-        } else { alert("חסרה פונקציית מחיקה ב-API"); }
+        }
     } catch (e) { alert("שגיאה במחיקה"); }
   };
 
@@ -137,7 +132,7 @@ function App() {
       setNewSoldierId(''); 
     } 
     else if (res.status === 409) {
-      if (window.confirm(`החייל כבר משובץ. להעביר אותו ל-${selectedVehicle.id}?`)) {
+      if (window.confirm(`החייל כבר משובץ. להעביר אותו לכלי ${selectedVehicle.id}?`)) {
         await api.assignSoldier(newSoldierId, selectedVehicle.id, true);
         loadData(); 
         setNewSoldierId('');
@@ -147,12 +142,10 @@ function App() {
 
   useEffect(() => { loadData(); }, [view]);
 
-  // --- 4. התצוגה (JSX) ---
   return (
     <ThemeProvider theme={shabzakTheme}>
       <Box sx={{ bgcolor: 'background.default', minHeight: '100vh', direction: 'rtl' }}>
         
-        {/* סרגל עליון */}
         <AppBar position="sticky" elevation={0}>
           <Toolbar sx={{ justifyContent: 'space-between' }}>
             <Typography variant="h6" sx={{ fontWeight: '900' }}>ShabzakNet v2.0</Typography>
@@ -167,37 +160,33 @@ function App() {
           </Toolbar>
         </AppBar>
 
-        {/* תפריט ראשי - גריד 2x2 למובייל */}
         {view === 'menu' && (
           <Container maxWidth="md" sx={{ mt: isMobile ? 3 : 8, textAlign: 'center' }}>
-            <Typography variant={isMobile ? "h3" : "h1"} sx={{ color: 'primary.main', mb: isMobile ? 4 : 8, fontWeight: '900' }}>
+            <Typography variant={isMobile ? "h3" : "h1"} sx={{ color: 'primary.main', mb: isMobile ? 3 : 8, fontWeight: '900' }}>
               חמ"ל שבצ"ק-נט
             </Typography>
-            <Grid container spacing={isMobile ? 2 : 4} justifyContent="center">
+            <Grid container spacing={2} justifyContent="center">
               {[
-                { label: 'תמונת מצב', icon: <DashboardIcon />, v: 'dashboard', color: '#fbc02d' },
-                { label: 'עמדת QR', icon: <QrCodeScannerIcon />, v: 'kiosk', color: '#1b5e20' },
-                { label: 'ניהול כלים', icon: <DirectionsBusIcon />, v: 'fleet', color: '#1565c0' },
-                { label: 'ניהול לוחמים', icon: <BadgeIcon />, v: 'soldiers', color: '#e65100' }
+                { label: 'תמונת מצב', icon: <DashboardIcon sx={{ fontSize: '3rem' }} />, v: 'dashboard', color: '#fbc02d' },
+                { label: 'עמדת QR', icon: <QrCodeScannerIcon sx={{ fontSize: '3rem' }} />, v: 'kiosk', color: '#1b5e20' },
+                { label: 'ניהול כלים', icon: <DirectionsBusIcon sx={{ fontSize: '3rem' }} />, v: 'fleet', color: '#1565c0' },
+                { label: 'ניהול לוחמים', icon: <BadgeIcon sx={{ fontSize: '3rem' }} />, v: 'soldiers', color: '#e65100' }
               ].map(item => (
-                // xs=6 אומר 2 בשורה במובייל
                 <Grid item xs={6} md={3} key={item.v} onClick={() => setView(item.v)}>
                   <ListItemButton sx={{ 
                     flexDirection: 'column', 
-                    p: isMobile ? 2 : 4, 
+                    p: 2, 
                     borderRadius: 4, 
                     bgcolor: 'white', 
-                    borderBottom: `6px solid ${item.color}`, 
-                    boxShadow: 2,
-                    height: isMobile ? '140px' : '220px',
-                    justifyContent: 'center'
+                    borderBottom: `8px solid ${item.color}`, 
+                    boxShadow: 3,
+                    height: '180px', // גובה אחיד וגדול כפי שביקשת
+                    width: '100%',
+                    justifyContent: 'center',
+                    gap: 2
                   }}>
-                    <Box sx={{ color: item.color, transform: isMobile ? 'scale(1.5)' : 'scale(2.2)', mb: isMobile ? 2 : 4 }}>
-                      {item.icon}
-                    </Box>
-                    <Typography variant={isMobile ? "subtitle1" : "h5"} sx={{ fontWeight: 'bold' }}>
-                      {item.label}
-                    </Typography>
+                    <Box sx={{ color: item.color }}>{item.icon}</Box>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{item.label}</Typography>
                   </ListItemButton>
                 </Grid>
               ))}
@@ -205,34 +194,19 @@ function App() {
           </Container>
         )}
 
-        {/* ניתוב בין הדפים */}
         {view === 'dashboard' && <DashboardPage key={`d-${vehicles.length}`} stats={stats} vehicles={vehicles} setView={setView} setSelectedCategory={setSelectedCategory} />}
         {view === 'kiosk' && <KioskPage setView={setView} />}
         {view === 'soldiers' && <SoldiersPage soldiersList={soldiersList} vehicles={vehicles} onRefresh={loadData} setView={setView} handleOpenSoldier={handleOpenSoldier} />}
-        
-        {view === 'fleet' && (
-            <FleetPage 
-                key={`f-${vehicles.length}`} 
-                vehicles={vehicles} 
-                selectedCategory={selectedCategory} 
-                setSelectedCategory={setSelectedCategory} 
-                setView={setView} 
-                handleOpenVehicle={handleOpenVehicle} 
-                handleResetAll={handleResetAll} 
-            />
-        )}
+        {view === 'fleet' && <FleetPage key={`f-${vehicles.length}`} vehicles={vehicles} selectedCategory={selectedCategory} setSelectedCategory={setSelectedCategory} setView={setView} handleOpenVehicle={handleOpenVehicle} handleResetAll={handleResetAll} />}
 
-        {/* דיאלוג רכב - עם כפתור חזרה למובייל */}
+        {/* דיאלוג רכב */}
         <Dialog open={openVehicleDialog} onClose={() => setOpenVehicleDialog(false)} fullScreen={isMobile} fullWidth maxWidth="sm">
           {selectedVehicle && (
             <>
               <DialogTitle sx={{ bgcolor: '#1b5e20', color: 'white', p: 1.5 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {/* כפתור חזרה חדש - קריטי למובייל */}
-                  <IconButton onClick={() => setOpenVehicleDialog(false)} sx={{ color: 'white' }}>
-                    <ArrowForwardIcon />
-                  </IconButton>
-                  
+                  {/* חץ חזרה - קריטי למובייל */}
+                  <IconButton onClick={() => setOpenVehicleDialog(false)} sx={{ color: 'white' }}><ArrowForwardIcon /></IconButton>
                   <Box sx={{ flexGrow: 1 }}>
                     <Typography variant="h6" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>צוות: {selectedVehicle.id}</Typography>
                     <Typography variant="caption" sx={{ opacity: 0.8 }}>
@@ -277,11 +251,10 @@ function App() {
           )}
         </Dialog>
 
-        {/* דיאלוג חייל - מותאם למובייל */}
+        {/* דיאלוג לוחם */}
         <Dialog open={openSoldierDialog} onClose={() => setOpenSoldierDialog(false)} fullScreen={isMobile} fullWidth maxWidth="xs" PaperProps={{ sx: { borderRadius: isMobile ? 0 : 5, overflow: 'hidden' } }}>
           {selectedSoldier && (
             <Box sx={{ direction: 'rtl', bgcolor: 'white', height: '100%' }}>
-              {/* כותרת עליונה לכרטיס לוחם */}
               <AppBar position="static" sx={{ bgcolor: '#1b5e20', boxShadow: 0 }}>
                 <Toolbar>
                    <IconButton edge="start" color="inherit" onClick={() => setOpenSoldierDialog(false)}><ArrowForwardIcon /></IconButton>
@@ -289,7 +262,6 @@ function App() {
                    <IconButton color="error" onClick={handlePhotoDelete}><DeleteIcon /></IconButton>
                 </Toolbar>
               </AppBar>
-
               <DialogContent sx={{ textAlign: 'center', px: 3, pt: 4 }}>
                   <input accept="image/*" style={{ display: 'none' }} id="upload-photo-input" type="file" onChange={handlePhotoUpload} />
                   <label htmlFor="upload-photo-input">
@@ -299,25 +271,19 @@ function App() {
                       </Avatar>
                     </IconButton>
                   </label>
-                  
                   <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#1b5e20', mt: 2 }}>{selectedSoldier.full_name}</Typography>
                   <Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>{selectedSoldier.rank} | {selectedSoldier.military_id}</Typography>
-                  
                   <Box sx={{ p: 2, border: '1px solid #eee', borderRadius: 4, display: 'inline-block', bgcolor: 'white' }}>
                       <img src={`${API_BASE_URL}${selectedSoldier.qr_url}`} alt="QR" style={{ width: 160, height: 160 }} />
                   </Box>
-                  
                   <Box sx={{ mt: 4, p: 2, borderRadius: 3, bgcolor: '#f1f8e9', border: '2px solid #1b5e20' }}>
                       <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: '#1b5e20' }}>
                         שיבוץ נוכחי: {selectedSoldier.assigned_vehicle || 'לא משובץ'}
                       </Typography>
                   </Box>
               </DialogContent>
-              
               <DialogActions sx={{ p: 3, justifyContent: 'center' }}>
-                <Button fullWidth onClick={() => setOpenSoldierDialog(false)} variant="outlined" color="inherit" size="large">
-                  סגור כרטיס
-                </Button>
+                <Button fullWidth onClick={() => setOpenSoldierDialog(false)} variant="outlined" color="inherit" size="large">סגור כרטיס</Button>
               </DialogActions>
             </Box>
           )}
