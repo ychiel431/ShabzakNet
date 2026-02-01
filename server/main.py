@@ -88,7 +88,7 @@ async def get_vehicles_with_soldiers():
 @app.post("/admin/upload-csv")
 async def upload_soldiers_csv(file: UploadFile = File(...)):
     try:
-        # קריאת הקובץ עם תמיכה בעברית (utf-8-sig מטפל ב-BOM של Excel)
+        # קריאת תוכן הקובץ ופיענוח עברית (utf-8-sig)
         content = await file.read()
         decoded = content.decode('utf-8-sig')
         csv_reader = csv.DictReader(decoded.splitlines())
@@ -106,7 +106,7 @@ async def upload_soldiers_csv(file: UploadFile = File(...)):
 
             vehicle_id = clean_row.get("assigned_vehicle_id", "לא משובץ")
             
-            # 1. יצירת/עדכון חייל
+            # 1. יצירת/עדכון לוחם ב-DB
             soldier = {
                 "military_id": military_id,
                 "full_name": clean_row.get("full_name", ""),
@@ -123,9 +123,9 @@ async def upload_soldiers_csv(file: UploadFile = File(...)):
                 upsert=True
             )
 
-            # 2. יצירת רכב אוטומטית אם הוא לא קיים
+            # 2. יצירת רכב אוטומטית אם הוא לא קיים (התיקון הקריטי)
             if vehicle_id and vehicle_id != "לא משובץ":
-                # שימוש ב-upsert גם לרכב כדי למנוע כפילויות בריצה אחת
+                # נשתמש ב-$setOnInsert כדי ליצור רק אם לא קיים ולא לדרוס נתונים
                 res = await db.vehicles.update_one(
                     {"id": vehicle_id},
                     {"$setOnInsert": {
@@ -136,6 +136,7 @@ async def upload_soldiers_csv(file: UploadFile = File(...)):
                     }},
                     upsert=True
                 )
+                # אם נוצר רכב חדש, נספור אותו
                 if res.upserted_id:
                     vehicle_count += 1
             
@@ -146,11 +147,8 @@ async def upload_soldiers_csv(file: UploadFile = File(...)):
             "message": f"עודכנו {count} חיילים ונוצרו {vehicle_count} רכבים חדשים"
         }
     except Exception as e:
-        print(f"Error uploading CSV: {e}")
+        print(f"Error processing CSV: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    
-
-    
 
 @app.get("/admin/soldiers/list")
 async def get_all_soldiers():
