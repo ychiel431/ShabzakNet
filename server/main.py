@@ -88,31 +88,32 @@ async def get_vehicles_with_soldiers():
 @app.post("/admin/upload-csv")
 async def upload_soldiers_csv(file: UploadFile = File(...)):
     try:
-
-        await db.soldiers.delete_many({})
-        await db.vehicles.delete_many({})
-        
-        content = await file.read()
-        
-        # קריאת תוכן הקובץ ופיענוח עברית (utf-8-sig)
         content = await file.read()
         decoded = content.decode('utf-8-sig')
-        csv_reader = csv.DictReader(decoded.splitlines())
+        lines = decoded.splitlines()
+        csv_reader = csv.DictReader(lines)
+        
+        # שלב א': אימות שיש נתונים לפני מחיקה
+        rows = list(csv_reader)
+        if not rows:
+            raise HTTPException(status_code=400, detail="הקובץ ריק")
+
+        # שלב ב': עכשיו אפשר למחוק בבטחה
+        await database.soldiers.delete_many({})
+        await database.vehicles.delete_many({})
         
         count = 0
         vehicle_count = 0
         
-        for row in csv_reader:
-            # ניקוי רווחים משמות העמודות והערכים
-            clean_row = {k.strip(): v.strip() for k, v in row.items() if k}
-            
+        for clean_row in rows:
+            # ניקוי רווחים
+            clean_row = {k.strip(): v.strip() for k, v in clean_row.items() if k}
             military_id = clean_row.get("military_id")
-            if not military_id:
-                continue
+            if not military_id: continue
 
             vehicle_id = clean_row.get("assigned_vehicle_id", "לא משובץ")
             
-            # 1. יצירת/עדכון לוחם ב-DB
+            # יצירת חייל
             soldier = {
                 "military_id": military_id,
                 "full_name": clean_row.get("full_name", ""),
@@ -120,19 +121,13 @@ async def upload_soldiers_csv(file: UploadFile = File(...)):
                 "unit": clean_row.get("unit", ""),
                 "assigned_vehicle_id": vehicle_id,
                 "mission_role": clean_row.get("mission_role", "לוחם"),
-                "is_finalized": False # איפוס סטטוס אימות בטעינה חדשה
+                "is_finalized": False
             }
-            
-            await db.soldiers.update_one(
-                {"military_id": military_id},
-                {"$set": soldier},
-                upsert=True
-            )
+            await database.soldiers.insert_one(soldier)
 
-            # 2. יצירת רכב אוטומטית אם הוא לא קיים (התיקון הקריטי)
+            # יצירת רכב אוטומטית
             if vehicle_id and vehicle_id != "לא משובץ":
-                # נשתמש ב-$setOnInsert כדי ליצור רק אם לא קיים ולא לדרוס נתונים
-                res = await db.vehicles.update_one(
+                res = await database.vehicles.update_one(
                     {"id": vehicle_id},
                     {"$setOnInsert": {
                         "id": vehicle_id,
@@ -142,19 +137,14 @@ async def upload_soldiers_csv(file: UploadFile = File(...)):
                     }},
                     upsert=True
                 )
-                # אם נוצר רכב חדש, נספור אותו
-                if res.upserted_id:
-                    vehicle_count += 1
+                if res.upserted_id: vehicle_count += 1
             
             count += 1
             
-        return {
-            "status": "success", 
-            "message": f"עודכנו {count} חיילים ונוצרו {vehicle_count} רכבים חדשים"
-        }
+        return {"status": "success", "message": f"נטענו {count} חיילים ו-{vehicle_count} רכבים"}
     except Exception as e:
-        print(f"Error processing CSV: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"ERROR: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"שגיאה בעיבוד הקובץ: {str(e)}")
 
 @app.get("/admin/soldiers/list")
 async def get_all_soldiers():
