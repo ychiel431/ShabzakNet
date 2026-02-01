@@ -84,31 +84,73 @@ async def get_vehicles_with_soldiers():
         return {"error": str(e)}
 
 # --- 2. ניהול חיילים ו-CSV ---
+
 @app.post("/admin/upload-csv")
 async def upload_soldiers_csv(file: UploadFile = File(...)):
-    csv_reader = csv.DictReader(codecs.iterdecode(file.file, 'utf-8-sig'))
-    count = 0
-    for row in csv_reader:
-        clean_row = {k.strip(): v.strip() for k, v in row.items() if k}
-        if "military_id" in clean_row and clean_row["military_id"]:
+    try:
+        # קריאת הקובץ עם תמיכה בעברית (utf-8-sig מטפל ב-BOM של Excel)
+        content = await file.read()
+        decoded = content.decode('utf-8-sig')
+        csv_reader = csv.DictReader(decoded.splitlines())
+        
+        count = 0
+        vehicle_count = 0
+        
+        for row in csv_reader:
+            # ניקוי רווחים משמות העמודות והערכים
+            clean_row = {k.strip(): v.strip() for k, v in row.items() if k}
+            
+            military_id = clean_row.get("military_id")
+            if not military_id:
+                continue
+
+            vehicle_id = clean_row.get("assigned_vehicle_id", "לא משובץ")
+            
+            # 1. יצירת/עדכון חייל
             soldier = {
-                "military_id": clean_row["military_id"],
+                "military_id": military_id,
                 "full_name": clean_row.get("full_name", ""),
                 "rank": clean_row.get("rank", "טוראי"),
                 "unit": clean_row.get("unit", ""),
-                "assigned_vehicle_id": clean_row.get("assigned_vehicle_id", "לא משובץ"),
+                "assigned_vehicle_id": vehicle_id,
                 "mission_role": clean_row.get("mission_role", "לוחם"),
-                "photo_url": "" 
+                "is_finalized": False # איפוס סטטוס אימות בטעינה חדשה
             }
-            # עדכון ב-DB (Upsert)
+            
             await db.soldiers.update_one(
-                {"military_id": soldier["military_id"]},
+                {"military_id": military_id},
                 {"$set": soldier},
                 upsert=True
             )
-            count += 1
-    return {"status": "success", "message": f"עודכנו {count} חיילים"}
 
+            # 2. יצירת רכב אוטומטית אם הוא לא קיים
+            if vehicle_id and vehicle_id != "לא משובץ":
+                # שימוש ב-upsert גם לרכב כדי למנוע כפילויות בריצה אחת
+                res = await db.vehicles.update_one(
+                    {"id": vehicle_id},
+                    {"$setOnInsert": {
+                        "id": vehicle_id,
+                        "type": vehicle_id.split('-')[0] if '-' in vehicle_id else "כלי",
+                        "current_occupancy": 0,
+                        "finalized_count": 0
+                    }},
+                    upsert=True
+                )
+                if res.upserted_id:
+                    vehicle_count += 1
+            
+            count += 1
+            
+        return {
+            "status": "success", 
+            "message": f"עודכנו {count} חיילים ונוצרו {vehicle_count} רכבים חדשים"
+        }
+    except Exception as e:
+        print(f"Error uploading CSV: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+    
 
 @app.get("/admin/soldiers/list")
 async def get_all_soldiers():
