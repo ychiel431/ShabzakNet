@@ -84,39 +84,45 @@ async def get_vehicles_with_soldiers():
         return {"error": str(e)}
 
 # --- 2. ניהול חיילים ו-CSV ---
-
 @app.post("/admin/upload-csv")
 async def upload_soldiers_csv(file: UploadFile = File(...)):
     try:
+        # קריאת תוכן הקובץ
         content = await file.read()
-        decoded = content.decode('utf-8-sig')
-        lines = decoded.splitlines()
-        csv_reader = csv.DictReader(lines)
-        
-        # שלב א': אימות שיש נתונים לפני מחיקה
-        rows = list(csv_reader)
-        if not rows:
+        try:
+            # ניסיון פיענוח עם utf-8-sig (הכי בטוח לעברית של אקסל)
+            decoded = content.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            # גיבוי במידה והקובץ נשמר בפורמט עברי ישן (Windows-1255)
+            decoded = content.decode('cp1255', errors='ignore')
+            
+        lines = [line for line in decoded.splitlines() if line.strip()]
+        if not lines:
             raise HTTPException(status_code=400, detail="הקובץ ריק")
 
-        # שלב ב': עכשיו אפשר למחוק בבטחה
+        csv_reader = csv.DictReader(lines)
+        
+        # שלב א': מחיקת נתונים קיימים (רק אחרי שהצלחנו לקרוא את הקובץ!)
         await database.soldiers.delete_many({})
         await database.vehicles.delete_many({})
         
         count = 0
         vehicle_count = 0
         
-        for clean_row in rows:
-            # ניקוי רווחים
-            clean_row = {k.strip(): v.strip() for k, v in clean_row.items() if k}
+        for row in csv_reader:
+            # ניקוי רווחים ותווים נסתרים משמות העמודות והערכים
+            clean_row = {str(k).strip(): str(v).strip() for k, v in row.items() if k is not None}
+            
             military_id = clean_row.get("military_id")
-            if not military_id: continue
+            if not military_id or military_id == "None":
+                continue
 
             vehicle_id = clean_row.get("assigned_vehicle_id", "לא משובץ")
             
             # יצירת חייל
             soldier = {
                 "military_id": military_id,
-                "full_name": clean_row.get("full_name", ""),
+                "full_name": clean_row.get("full_name", "ללא שם"),
                 "rank": clean_row.get("rank", "טוראי"),
                 "unit": clean_row.get("unit", ""),
                 "assigned_vehicle_id": vehicle_id,
@@ -125,7 +131,7 @@ async def upload_soldiers_csv(file: UploadFile = File(...)):
             }
             await database.soldiers.insert_one(soldier)
 
-            # יצירת רכב אוטומטית
+            # יצירת רכב אוטומטית (Upsert)
             if vehicle_id and vehicle_id != "לא משובץ":
                 res = await database.vehicles.update_one(
                     {"id": vehicle_id},
@@ -133,18 +139,22 @@ async def upload_soldiers_csv(file: UploadFile = File(...)):
                         "id": vehicle_id,
                         "type": vehicle_id.split('-')[0] if '-' in vehicle_id else "כלי",
                         "current_occupancy": 0,
+                        "capacity": 12 if "ZEEV" in vehicle_id else (11 if "NAMER" in vehicle_id else 4),
                         "finalized_count": 0
                     }},
                     upsert=True
                 )
-                if res.upserted_id: vehicle_count += 1
+                if res.upserted_id:
+                    vehicle_count += 1
             
             count += 1
             
-        return {"status": "success", "message": f"נטענו {count} חיילים ו-{vehicle_count} רכבים"}
+        return {"status": "success", "message": f"נטענו {count} חיילים ונוצרו {vehicle_count} רכבים"}
     except Exception as e:
-        print(f"ERROR: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"שגיאה בעיבוד הקובץ: {str(e)}")
+        print(f"CRITICAL ERROR DURING CSV UPLOAD: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"שגיאה בפורמט הקובץ: {str(e)}")
+
+
 
 @app.get("/admin/soldiers/list")
 async def get_all_soldiers():
