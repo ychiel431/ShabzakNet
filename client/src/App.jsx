@@ -1,4 +1,8 @@
+<<<<<<< Updated upstream
 import React, { useState, useEffect, useRef } from 'react';
+=======
+import React, { useState, useEffect, useCallback } from 'react';
+>>>>>>> Stashed changes
 import { 
   ThemeProvider, Box, AppBar, Toolbar, Typography, Button, Dialog, 
   DialogTitle, DialogContent, DialogActions, List, ListItem, 
@@ -13,6 +17,10 @@ import BadgeIcon from '@mui/icons-material/Badge';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
+<<<<<<< Updated upstream
+=======
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+>>>>>>> Stashed changes
 
 import { shabzakTheme } from './theme/shabzakTheme';
 import { api, API_BASE_URL } from './services/api';
@@ -22,8 +30,16 @@ import FleetPage from './pages/FleetPage';
 import SoldiersPage from './pages/SoldiersPage';
 
 function App() {
+<<<<<<< Updated upstream
   // --- 1. הגדרת States (מצב) ---
+=======
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  
+  // --- States ---
+>>>>>>> Stashed changes
   const [view, setView] = useState('menu');
+  const [scannedId, setScannedId] = useState(null);
   const [vehicles, setVehicles] = useState([]);
   const [soldiersList, setSoldiersList] = useState([]);
   const [stats, setStats] = useState({ readiness: 0, totalSoldiers: 0, assignedSoldiers: 0, totalVehicles: 0, fullVehicles: 0 });
@@ -38,7 +54,36 @@ function App() {
   // שימוש ב-Ref כדי למנוע רינדורים מיותרים אם לא צריך
   const lastVerifiedCount = useRef(0);
 
+<<<<<<< Updated upstream
   // --- 2. פונקציות לוגיקה (Logic) ---
+=======
+  // --- לוגיקת זיהוי סריקה (בראש הקומפוננטה) ---
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const idFromScan = urlParams.get('scan');
+    
+    if (idFromScan) {
+      console.log("סריקה זוהתה:", idFromScan);
+      setScannedId(idFromScan);
+      setView('kiosk');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [vData, sData] = await Promise.all([api.fetchVehicles(), api.fetchSoldiers()]);
+      const enrichedVehicles = vData.map(v => ({ 
+          ...v, 
+          crew: [...(v.crew || [])].sort((a, b) => (b.is_finalized - a.is_finalized)),
+          capacity: v.id.includes('NAMER') ? 11 : (v.id.includes('ZEEV') ? 12 : 4) 
+        }));
+      setVehicles(enrichedVehicles); 
+      setSoldiersList(sData);
+      calculateStats(enrichedVehicles, sData);
+    } catch (e) { console.error("Load error:", e); }
+  }, []);
+>>>>>>> Stashed changes
 
   const calculateStats = (vData, sData) => {
     const assigned = sData.filter(s => s.assigned_vehicle_id && s.assigned_vehicle_id !== 'לא משובץ').length;
@@ -48,6 +93,7 @@ function App() {
     setStats({ readiness, totalSoldiers: sData.length, assignedSoldiers: assigned, totalVehicles: vData.length, fullVehicles });
   };
 
+<<<<<<< Updated upstream
   const loadData = async () => {
     try {
       console.log("Loading data..."); 
@@ -112,6 +158,11 @@ function App() {
       }
     }
   };
+=======
+  useEffect(() => {
+    loadData();
+  }, [loadData, view]);
+>>>>>>> Stashed changes
 
   const handleOpenSoldier = async (mId) => {
     try {
@@ -123,6 +174,7 @@ function App() {
     }
   };
 
+  // --- הפונקציות שהיו חסרות ---
   const handlePhotoUpload = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -153,17 +205,22 @@ function App() {
         }
     } catch (error) { alert("שגיאה במחיקה"); }
   };
+  // ---------------------------
 
   const handleAssign = async () => {
     const soldier = soldiersList.find(s => s.military_id === newSoldierId);
     const currentVehicle = soldier?.assigned_vehicle_id || 'לא משובץ';
     const res = await api.assignSoldier(newSoldierId, selectedVehicle.id);
+<<<<<<< Updated upstream
     
     if (res.ok) { 
       loadData(); 
       setOpenVehicleDialog(false); 
       setNewSoldierId(''); 
     } 
+=======
+    if (res.ok) { loadData(); setNewSoldierId(''); } 
+>>>>>>> Stashed changes
     else if (res.status === 409) {
       if (window.confirm(`החייל כבר משובץ לכלי: ${currentVehicle}. האם להעביר אותו לכלי ${selectedVehicle.id}?`)) {
         await api.assignSoldier(newSoldierId, selectedVehicle.id, true);
@@ -174,6 +231,7 @@ function App() {
     } else { alert("חייל לא נמצא במערכת"); }
   };
 
+<<<<<<< Updated upstream
   // --- 4. useEffect (טעינה ראשונית) ---
   useEffect(() => {
     loadData();
@@ -194,23 +252,48 @@ function App() {
               🔄 רענן נתונים
             </Button>
             {view !== 'menu' && <Button color="inherit" onClick={() => setView('menu')}>תפריט ראשי</Button>}
+=======
+  return (
+    <ThemeProvider theme={shabzakTheme}>
+      <Box sx={{ bgcolor: 'background.default', minHeight: '100vh', direction: 'rtl' }}>
+        <AppBar position="sticky" elevation={0}>
+          <Toolbar sx={{ justifyContent: 'space-between' }}>
+            <Typography variant="h6" sx={{ fontWeight: '900' }}>ShabzakNet v2.0</Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <IconButton color="inherit" onClick={loadData}><RefreshIcon /></IconButton>
+              {view !== 'menu' && <Button color="inherit" variant="outlined" size="small" onClick={() => setView('menu')}>תפריט</Button>}
+            </Box>
+>>>>>>> Stashed changes
           </Toolbar>
         </AppBar>
 
         {view === 'menu' && (
+<<<<<<< Updated upstream
           <Container maxWidth="xl" sx={{ mt: 8, textAlign: 'center' }}>
             <Typography variant="h1" sx={{ color: 'primary.main', mb: 8, fontSize: '4rem', fontWeight: 'bold' }}>חמ"ל שבצ"ק-נט</Typography>
             <Grid container spacing={4} justifyContent="center">
+=======
+          <Container maxWidth="md" sx={{ mt: 5, textAlign: 'center' }}>
+            <Typography variant={isMobile ? "h3" : "h1"} sx={{ color: 'primary.main', mb: 5, fontWeight: '900' }}>חמ"ל שבצ"ק-נט</Typography>
+            <Grid container spacing={2} justifyContent="center">
+>>>>>>> Stashed changes
               {[
                 { label: 'תמונת מצב', icon: <DashboardIcon fontSize="large"/>, v: 'dashboard', color: '#fbc02d' },
                 { label: 'עמדת QR', icon: <QrCodeScannerIcon fontSize="large"/>, v: 'kiosk', color: '#1b5e20' },
                 { label: 'ניהול כלים', icon: <DirectionsBusIcon fontSize="large"/>, v: 'fleet', color: '#1565c0' },
                 { label: 'ניהול לוחמים', icon: <BadgeIcon fontSize="large"/>, v: 'soldiers', color: '#e65100' }
               ].map(item => (
+<<<<<<< Updated upstream
                 <Grid item xs={12} sm={6} md={3} key={item.v} onClick={() => setView(item.v)}>
                   <ListItemButton sx={{ flexDirection: 'column', p: 4, borderRadius: 6, bgcolor: 'white', borderBottom: `6px solid ${item.color}`, boxShadow: 3 }}>
                     <Box sx={{ color: item.color, transform: 'scale(2)', mb: 3 }}>{item.icon}</Box>
                     <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{item.label}</Typography>
+=======
+                <Grid item xs={6} md={3} key={item.v} onClick={() => setView(item.v)}>
+                  <ListItemButton sx={{ flexDirection: 'column', p: 2, borderRadius: 4, bgcolor: 'white', borderBottom: `8px solid ${item.color}`, boxShadow: 3, height: '180px', justifyContent: 'center', gap: 2 }}>
+                    <Box sx={{ color: item.color }}>{item.icon}</Box>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{item.label}</Typography>
+>>>>>>> Stashed changes
                   </ListItemButton>
                 </Grid>
               ))}
@@ -218,6 +301,7 @@ function App() {
           </Container>
         )}
 
+<<<<<<< Updated upstream
         {/* מפתח (Key) דינמי מבטיח שכל לחיצה על רענן תבנה מחדש את הדף */}
         {view === 'dashboard' && <DashboardPage key={`dash-${vehicles.length}-${Date.now()}`} stats={stats} vehicles={vehicles} setView={setView} setSelectedCategory={setSelectedCategory} />}
         {view === 'kiosk' && <KioskPage setView={setView} />}
@@ -235,11 +319,18 @@ function App() {
                 handleResetAll={handleResetAll} 
             />
         )}
+=======
+        {view === 'dashboard' && <DashboardPage stats={stats} vehicles={vehicles} setView={setView} setSelectedCategory={setSelectedCategory} />}
+        {view === 'kiosk' && <KioskPage setView={setView} scannedId={scannedId} />}
+        {view === 'soldiers' && <SoldiersPage soldiersList={soldiersList} vehicles={vehicles} onRefresh={loadData} setView={setView} handleOpenSoldier={handleOpenSoldier} />}
+        {view === 'fleet' && <FleetPage vehicles={vehicles} selectedCategory={selectedCategory} setSelectedCategory={setSelectedCategory} setView={setView} handleOpenVehicle={(v) => { setSelectedVehicle(v); setOpenVehicleDialog(true); }} handleResetAll={loadData} />}
+>>>>>>> Stashed changes
 
         {/* דיאלוג רכב */}
         <Dialog open={openVehicleDialog} onClose={() => setOpenVehicleDialog(false)} fullWidth maxWidth="sm">
           {selectedVehicle && (
             <>
+<<<<<<< Updated upstream
               <DialogTitle sx={{ bgcolor: '#1b5e20', color: 'white', p: 2 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box>
@@ -272,6 +363,18 @@ function App() {
                             {s.is_finalized && <Tooltip title={`אומת ב-${s.finalized_at}`}><CheckCircleIcon sx={{ color: '#2e7d32', fontSize: 22 }} /></Tooltip>}
                           </Box>
                           <Typography variant="caption" color="text.secondary">{s.mission_role}</Typography>
+=======
+              <DialogTitle sx={{ bgcolor: '#1b5e20', color: 'white' }}>צוות: {selectedVehicle.id}</DialogTitle>
+              <DialogContent sx={{ p: 0 }}>
+                <List>
+                  {selectedVehicle.crew?.map((s) => (
+                    <ListItem key={s.military_id} divider secondaryAction={<IconButton edge="end" color="error" onClick={async () => { if (window.confirm(`להסיר את ${s.full_name}?`)) { await api.unassignSoldier(s.military_id); loadData(); } }}><DeleteIcon /></IconButton>}>
+                      <ListItemButton onClick={() => handleOpenSoldier(s.military_id)}>
+                        <Avatar sx={{ ml: 1.5, bgcolor: s.is_finalized ? '#2e7d32' : 'primary.main' }}>{s.full_name[0]}</Avatar>
+                        <Box>
+                          <Typography variant="body1">{s.full_name} {s.is_finalized && '✅'}</Typography>
+                          <Typography variant="caption">{s.rank} | {s.mission_role}</Typography>
+>>>>>>> Stashed changes
                         </Box>
                       </ListItemButton>
                     </ListItem>
@@ -282,10 +385,18 @@ function App() {
                   <Button variant="contained" onClick={handleAssign} sx={{ bgcolor: '#1b5e20' }}>הוסף</Button>
                 </Box>
               </DialogContent>
+<<<<<<< Updated upstream
+=======
+              <DialogActions sx={{ p: 2, bgcolor: '#f5f5f5' }}>
+                <TextField fullWidth size="small" placeholder='מ"א להוספה' value={newSoldierId} onChange={e => setNewSoldierId(e.target.value)} />
+                <Button variant="contained" onClick={handleAssign} sx={{ bgcolor: '#1b5e20' }}>הוסף</Button>
+              </DialogActions>
+>>>>>>> Stashed changes
             </>
           )}
         </Dialog>
 
+<<<<<<< Updated upstream
         {/* דיאלוג חייל */}
         <Dialog open={openSoldierDialog} onClose={() => setOpenSoldierDialog(false)} fullWidth maxWidth="xs" PaperProps={{ sx: { borderRadius: 5, overflow: 'hidden' } }}>
           {selectedSoldier && (
@@ -318,6 +429,40 @@ function App() {
                 {/* כאן הוספתי כפתור מחיקת תמונה אם תרצה */}
                  <Button color="error" onClick={handlePhotoDelete}>מחק תמונה</Button>
               </DialogActions>
+=======
+        {/* דיאלוג לוחם */}
+        <Dialog open={openSoldierDialog} onClose={() => setOpenSoldierDialog(false)} fullWidth maxWidth="xs">
+          {selectedSoldier && (
+            <Box sx={{ p: 3, textAlign: 'center', direction: 'rtl' }}>
+               <AppBar position="static" sx={{ bgcolor: '#1b5e20', boxShadow: 0, mb: 2 }}>
+                <Toolbar>
+                   <IconButton edge="start" color="inherit" onClick={() => setOpenSoldierDialog(false)}><ArrowForwardIcon /></IconButton>
+                   <Typography sx={{ ml: 2, flex: 1, fontWeight: 'bold' }}>כרטיס לוחם</Typography>
+                   <IconButton color="error" onClick={handlePhotoDelete}><DeleteIcon /></IconButton>
+                </Toolbar>
+              </AppBar>
+              
+              <input accept="image/*" style={{ display: 'none' }} id="upload-photo-input" type="file" onChange={handlePhotoUpload} />
+              <label htmlFor="upload-photo-input">
+                <IconButton component="span" sx={{ p: 0 }}>
+                  <Avatar src={selectedSoldier.photo_url ? `${API_BASE_URL}${selectedSoldier.photo_url}` : ""} sx={{ width: 100, height: 100, mx: 'auto', border: '3px solid #1b5e20' }}>
+                     {!selectedSoldier.photo_url && selectedSoldier.full_name?.[0]}
+                  </Avatar>
+                </IconButton>
+              </label>
+
+              <Typography variant="h5" sx={{ mt: 2, fontWeight: 'bold' }}>{selectedSoldier.full_name}</Typography>
+              <Typography color="textSecondary">{selectedSoldier.rank} | {selectedSoldier.military_id}</Typography>
+              
+              <Box sx={{ p: 2, border: '1px solid #eee', borderRadius: 4, display: 'inline-block', bgcolor: 'white', mt: 2 }}>
+                 <img src={`${API_BASE_URL}${selectedSoldier.qr_url}`} alt="QR" style={{ width: 140, height: 140 }} />
+              </Box>
+
+              <Box sx={{ mt: 2, p: 2, bgcolor: '#f1f8e9', borderRadius: 2 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>שיבוץ: {selectedSoldier.assigned_vehicle || 'לא משובץ'}</Typography>
+              </Box>
+              <Button fullWidth onClick={() => setOpenSoldierDialog(false)} sx={{ mt: 3 }} variant="outlined">סגור</Button>
+>>>>>>> Stashed changes
             </Box>
           )}
         </Dialog>
