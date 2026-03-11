@@ -56,7 +56,7 @@ const DashboardPage = ({ stats, vehicles, setView , setSelectedCategory }) => {
 
       <Grid container spacing={4}>
         
-        {/* כרטיס ראשי - כשירות כללית */}
+        {/*  כרטיס ראשי - כשירות כללית */}
         <Grid item xs={12} md={4}>
           <Paper 
             elevation={6} 
